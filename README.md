@@ -1,1 +1,1 @@
-# Doom-1993-Ray-Traced
+# Doom-1993-Path-Traced
