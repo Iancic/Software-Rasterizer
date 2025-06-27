@@ -17,3 +17,7 @@ constexpr int SCREEN_LOGICAL_HEIGHT = 360;
 
 const float CAMERA_SHIFT_INCREMENT_WIDTH = SCREEN_WIDTH;
 const float CAMERA_SHIFT_INCREMENT_HEIGHT = SCREEN_HEIGHT;
+
+constexpr int TRI_N = 12;
+
+constexpr float M_PI = 3.14159f;

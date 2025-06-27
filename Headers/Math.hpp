@@ -2,6 +2,14 @@
 #include <cstdint>
 #include <algorithm>
 #include <math.h>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <vector>
+#include <deque>
+#include <cassert>
+#include <unordered_map>
+#include "tiny_obj_loader.h"
 #include "Common.hpp"
 
 struct int2
@@ -28,7 +36,13 @@ struct float2
 {
 	float x;
 	float y;
+
 };
+
+inline bool operator==(const float2& a, const float2& b)
+{
+	return a.x == b.x && a.y == b.y;
+}
 
 struct float3
 {
@@ -61,11 +75,27 @@ inline float3 operator/(const float3 A, const float3& B)
 	};
 };
 
+inline float3 operator*(const float3 A, const float3& B)
+{
+	return
+	{
+		A.x* B.x, A.y* B.y, A.z* B.z
+	};
+};
+
 inline float3 operator/(const float3 A, const float& B)
 {
 	return
 	{
 		A.x / B, A.y / B, A.z / B
+	};
+};
+
+inline float3 operator*(const float3 A, const float& B)
+{
+	return
+	{
+		A.x * B, A.y * B, A.z * B
 	};
 };
 
@@ -94,6 +124,11 @@ static inline float3 Cross(float3 a, float3 b)
 		a.z * b.x - a.x * b.z,
 		a.x * b.y - a.y * b.x
 	};
+}
+
+inline bool operator==(const float3& a, const float3& b) 
+{
+	return a.x == b.x && a.y == b.y && a.z == b.z;
 }
 
 struct float4
@@ -148,14 +183,253 @@ inline mat4 operator*(const mat4& A, const mat4& B)
 struct Vertex
 {
 	float3 position;
-	uint32_t color;
+	float2 uv;
+	float3 normal;
 	float4 pos4() const { return { position.x, position.y, position.z, 1.f }; };
+
+	bool operator==(const Vertex& other) const 
+	{
+		return (position == other.position &&
+			uv == other.uv &&
+			normal == other.normal);
+	}
+
+	float uOverZ;
+	float vOverZ;
+	float oneOverZ;
 };
 
 struct Triangle
 {
 	uint32_t color;
 	int indices[3];
+};
+
+struct Tri
+{ 
+	float3 vertex0, vertex1, vertex2; 
+	float3 centroid; 
+};
+
+struct FaceVertex
+{
+	int vertexIndex = -1;
+	int texCoordIndex = -1;
+	int normalIndex = -1;
+};
+
+struct FaceGroup
+{
+	std::vector<FaceVertex> faceVertices;
+	std::string name;
+};
+
+class Mesh
+{
+public:
+	Mesh() = default;
+	Mesh(std::vector<Triangle> trianglesArg, std::vector<Vertex> vertArg, std::vector<float2>texArg, std::vector<float3>normalArg, std::deque<FaceGroup> facesArg)
+		: triangle(trianglesArg), vertices(vertArg), texCoords(texArg), normals(normalArg), face_groups(facesArg) { };
+	std::vector<Vertex> vertices;
+	std::vector<float2> texCoords;
+	std::vector<float3> normals;
+	std::vector<Triangle> triangle;
+	std::deque<FaceGroup> face_groups;
+
+};
+
+static inline Mesh LoadMeshTinyObj(const std::string& filepath)
+{
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string warn, err;
+
+	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath.c_str());
+
+	if (!warn.empty()) std::cout << "WARN: " << warn << std::endl;
+	if (!err.empty()) std::cerr << "ERR: " << err << std::endl;
+	if (!ret) throw std::runtime_error("Failed to load OBJ");
+
+	std::vector<Vertex> vertices;
+	std::vector<Triangle> triangles;
+
+	for (const auto& shape : shapes) {
+		size_t indexOffset = 0;
+		for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
+			int fv = shape.mesh.num_face_vertices[f]; // should be 3 for triangles
+
+			Triangle tri;
+			for (int v = 0; v < fv; v++) {
+				tinyobj::index_t idx = shape.mesh.indices[indexOffset + v];
+
+				Vertex vert{};
+				vert.position = {
+					attrib.vertices[3 * idx.vertex_index + 0],
+					attrib.vertices[3 * idx.vertex_index + 1],
+					attrib.vertices[3 * idx.vertex_index + 2]
+				};
+
+				if (idx.texcoord_index >= 0) {
+					vert.uv = {
+						attrib.texcoords[2 * idx.texcoord_index + 0],
+						1.0f - attrib.texcoords[2 * idx.texcoord_index + 1] // flip Y
+					};
+				}
+
+				if (idx.normal_index >= 0) {
+					vert.normal = {
+						attrib.normals[3 * idx.normal_index + 0],
+						attrib.normals[3 * idx.normal_index + 1],
+						attrib.normals[3 * idx.normal_index + 2]
+					};
+				}
+
+				tri.indices[v] = static_cast<int>(vertices.size());
+				vertices.push_back(vert);
+			}
+
+			triangles.push_back(tri);
+			indexOffset += fv;
+		}
+	}
+
+	return Mesh(triangles, vertices, {}, {}, {}); // populate other fields as needed
+}
+
+static inline void ParseFaceVertex(const std::string& tuple, FaceVertex& faceVert)
+{
+	std::istringstream stream(tuple);
+	std::string part;
+
+	std::getline(stream, part, '/');
+	assert(!part.empty()); // ?? why not check here as well
+	faceVert.vertexIndex = std::stoi(part) - 1;
+
+	if (std::getline(stream, part, '/') && !part.empty()) 
+	{
+		faceVert.texCoordIndex = std::stoi(part) - 1;
+	}
+
+	if (std::getline(stream, part, '/') && !part.empty()) 
+	{
+		faceVert.normalIndex = std::stoi(part) - 1;
+	}
+}
+
+static inline void ProcessFace(const std::vector<std::string>& tuple, std::vector<FaceVertex>& face_vertices)
+{
+	assert(tuple.size() == 3);
+	for (const auto& tuple : tuple) 
+	{
+		FaceVertex face_vertex;
+		ParseFaceVertex(tuple, face_vertex);
+		face_vertices.push_back(face_vertex);
+	}
+}
+
+static inline Mesh LoadMesh(const char* filePath)
+{
+	std::vector<Vertex> vertices;
+	std::vector<float2> texCoords;
+	std::vector<float3> normals;
+	std::deque<FaceGroup> face_groups;
+	std::vector<Triangle> triangles;
+	face_groups.emplace_back();
+	FaceGroup* cur_face_group = &face_groups.back();
+
+	std::ifstream file(filePath);
+	std::string line;
+
+	while(std::getline(file, line))
+	{
+		std::istringstream stream(line);
+		std::string type;
+		stream >> type;
+		if (type == "v") // VERTEX
+		{
+			float3 vertex;
+			stream >> vertex.x >> vertex.y >> vertex.z;
+			vertices.push_back(Vertex{ vertex });
+		}
+		else if (type == "vt") // VERTEX TEXTURE COORD
+		{
+			float2 vt;
+			stream >> vt.x >> vt.y;
+			texCoords.push_back(vt);
+		}
+		else if (type == "vn") // VERTEX NORMAL
+		{
+			float3 vn;
+			stream >> vn.x >> vn.y;
+			normals.push_back(vn);
+		}
+		else if (type == "f") // FACE
+		{
+			std::vector<std::string> face;
+			std::string tuple;
+			while (stream >> tuple)
+			{
+				face.push_back(tuple);
+			}
+			ProcessFace(face, cur_face_group->faceVertices);
+		}
+		else if (type == "g") // GROUP
+		{
+			if (cur_face_group->faceVertices.size() != 0) 
+			{
+				face_groups.emplace_back();
+				cur_face_group = &face_groups.back();
+			}
+			stream >> cur_face_group->name;
+		}
+	}
+
+	file.close();
+
+	for (const auto& group : face_groups) 
+	{
+		for (size_t n = 0; n < group.faceVertices.size(); n += 3) 
+		{
+			const float3& v0 = vertices[group.faceVertices[n].vertexIndex].position;
+			const float3& v2 = vertices[group.faceVertices[n + 1].vertexIndex].position;
+			const float3& v1 = vertices[group.faceVertices[n + 2].vertexIndex].position;
+			
+			Triangle t;
+			t.indices[0] = group.faceVertices[n].vertexIndex;
+			t.indices[2] = group.faceVertices[n + 1].vertexIndex;
+			t.indices[1] = group.faceVertices[n + 2].vertexIndex;
+			triangles.push_back(t);
+			
+		}
+	}
+	std::vector<Triangle> finalTriangles;
+	std::vector<Vertex> finalVertices;
+	for (const auto& group : face_groups) 
+	{
+		for (size_t i = 0; i < group.faceVertices.size(); i += 3) 
+		{
+			Triangle t;
+
+			for (int j = 0; j < 3; ++j) 
+			{
+				const auto& fv = group.faceVertices[i + j];
+
+				Vertex v;
+				v.position = vertices[fv.vertexIndex].position;
+				v.uv = texCoords[fv.texCoordIndex];
+				v.normal = normals[fv.normalIndex];
+
+				int index = static_cast<int>(finalVertices.size());
+				finalVertices.push_back(v);
+				t.indices[j] = index;
+			}
+
+			finalTriangles.push_back(t);
+		}
+	}
+
+	return Mesh(finalTriangles, finalVertices, texCoords, normals, face_groups);
 };
 
 namespace mat
@@ -172,15 +446,22 @@ namespace mat
 
 	static inline mat4 Rotate(const float rX, const float rY, const float rZ, const float theta)
 	{
+		float len = sqrt(rX * rX + rY * rY + rZ * rZ);
+		if (len == 0.0f) return mat4::Identity(); // or handle as error
+
+		float x = rX / len;
+		float y = rY / len;
+		float z = rZ / len;
+
 		float c = cos(theta);
 		float s = sin(theta);
 		float t = 1.f - c;
 
 		return {
-			t * rX * rX + c,      t * rX * rY - s * rZ,  t * rX * rZ + s * rY,  0.f,
-			t * rX * rY + s * rZ,   t * rY * rY + c,     t * rY * rZ - s * rX,  0.f,
-			t * rX * rZ - s * rY,   t * rY * rZ + s * rX,  t * rZ * rZ + c,     0.f,
-			0.f,              0.f,             0.f,             1.f
+			t * x * x + c,     t * x * y - s * z,  t * x * z + s * y,  0.f,
+			t * x * y + s * z, t * y * y + c,      t * y * z - s * x,  0.f,
+			t * x * z - s * y, t * y * z + s * x,  t * z * z + c,      0.f,
+			0.f,               0.f,                0.f,                1.f
 		};
 	}
 
@@ -197,7 +478,7 @@ namespace mat
 	// TODO: These are blackboxed now learn about them
 	static inline mat4 LookAt(float3 eye, float3 target, float3 up)
 	{
-		float3 zaxis = Normalize(eye - target);               
+		float3 zaxis = Normalize(eye - target);
 		float3 xaxis = Normalize(Cross(up, zaxis));
 		float3 yaxis = Cross(zaxis, xaxis);
 
@@ -227,38 +508,32 @@ namespace mat
 			0,      0,      -zn * zf / (zf - zn),       0
 		};
 	};
-}
+};
 
 // Classes For Triangle fill
 // Article by https://joshbeam.com/articles/triangle_rasterization/
 class Edge
 {
 public:
-	uint32_t Color1, Color2;
 	int X1, Y1, X2, Y2;
-
+	float U1, V1, U2, V2;
+	float Z1, Z2;
 	// this makes sure first point of the edge is the one with lower y values
-	Edge(const uint32_t& color1, int x1, int y1, const uint32_t& color2, int x2, int y2)
+	Edge(int x1, int y1, int x2, int y2, float u1, float v1, float u2, float v2, float z1, float z2)
 	{
-		if (y1 < y2) 
+		Z1 = z1;
+		Z2 = z2;
+		if (y1 < y2)
 		{
-			Color1 = color1;
-			X1 = x1;
-			Y1 = y1;
-			Color2 = color2;
-			X2 = x2;
-			Y2 = y2;
+			X1 = x1; Y1 = y1; U1 = u1; V1 = v1; 
+			X2 = x2; Y2 = y2; U2 = u2; V2 = v2; 
 		}
-		else 
+		else
 		{
-			Color1 = color2;
-			X1 = x2;
-			Y1 = y2;
-			Color2 = color1;
-			X2 = x1;
-			Y2 = y1;
+			X1 = x2; Y1 = y2; U1 = u2; V1 = v2; 
+			X2 = x1; Y2 = y1; U2 = u1; V2 = v1;
 		}
-	};
+	}
 };
 
 // a span is an edge but without the y cause it's parralel to the screen we just go down
@@ -267,25 +542,61 @@ public:
 class Span
 {
 public:
-	uint32_t Color1, Color2;
 	int X1, X2;
+	float U1, V1, U2, V2;
+	float Z1, Z2; // For perspective correction
 
 	// same as the edge we have to make sure the x1 is the one that's the lowest.
-	Span(const uint32_t& color1, int x1, const uint32_t& color2, int x2)
+	Span(int x1, int x2, float u1, float v1, float u2, float v2, float z1, float z2)
 	{
 		if (x1 < x2)
 		{
-			Color1 = color1;
-			X1 = x1;
-			Color2 = color2;
-			X2 = x2;
+			X1 = x1; U1 = u1; V1 = v1;
+			X2 = x2; U2 = u2; V2 = v2;
 		}
 		else
 		{
-			Color1 = color2;
-			X1 = x2;
-			Color2 = color1;
-			X2 = x1;
+			X1 = x2; U1 = u2; V1 = v2;
+			X2 = x1; U2 = u1; V2 = v1;
 		}
-	};
+	}
 };
+
+static inline uint32_t MakeColor(float R, float G, float B, float A)
+{
+	return (static_cast<uint32_t>(B * 255) << 0 |
+		static_cast<uint32_t>(G * 255) << 8 |
+		static_cast<uint32_t>(R * 255) << 16 |
+		static_cast<uint32_t>(A * 255) << 24);
+}
+
+// Integer version: expects R, G, B, A in [0, 255] range
+static inline uint32_t MakeColor(int R, int G, int B, int A)
+{
+	return (static_cast<uint32_t>(B) << 0 |
+		static_cast<uint32_t>(G) << 8 |
+		static_cast<uint32_t>(R) << 16 |
+		static_cast<uint32_t>(A) << 24);
+}
+
+static inline uint32_t Lehmer32()
+{
+	uint32_t nLehmer = 0;
+	nLehmer += 0xe120fc15;
+	uint64_t tmp;
+	tmp = (uint64_t)nLehmer * 0x4a39b70d;
+	uint32_t m1 = (tmp >> 32) ^ tmp;
+	tmp = (uint64_t)m1 * 0x12fad5c9;
+	uint32_t m2 = (tmp >> 32) ^ tmp;
+	return m2;
+}
+
+static inline double rndDouble(double min, double max) // Random double in this range
+{
+	return ((double)Lehmer32() / (double)(0x7FFFFFFF)) * (max - min) + min;
+}
+
+static inline int rndInt(int min, int max) // Random int in this ranger
+{
+	return (Lehmer32() % (max - min)) + min;
+}

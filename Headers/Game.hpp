@@ -1,9 +1,20 @@
 #pragma once
 #include "Math.hpp"
 #include "Program.hpp"
+#include "Ray.hpp"
+#include "Model.hpp"
 
 static uint32_t* framebuffer = nullptr;
 static BITMAPINFO bitmapInfo;
+
+struct RenderState
+{
+	bool raytraced = false;
+	bool rasterized = true;
+	bool hyrbid = false;
+};
+
+static RenderState gameState;
 
 struct InputState 
 {
@@ -54,6 +65,20 @@ static inline LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 		case 'D': case VK_RIGHT:
 			input.moveRight = true;
 			break;
+		case 'T':
+		{
+			if (gameState.rasterized == true)
+			{
+				gameState.rasterized = false;
+				gameState.raytraced = true;
+			}
+			else if (gameState.raytraced == true)
+			{
+				gameState.rasterized = true;
+				gameState.raytraced = false;
+			}
+			break;
+		}
 		}
 		return 0;
 
@@ -113,7 +138,7 @@ private:
 	void Plot(uint32_t color, int pX, int pY);
 	void Line(uint32_t color, float x1, float y1, float x2, float y2);
 	void TriangleWireframe(uint32_t color, float x1, float y1, float x2, float y2, float x3, float y3);
-	void PlotTriangle(const uint32_t& color1, float x1, float y1, const uint32_t& color2, float x2, float y2, const uint32_t& color3, float x3, float y3);
+	void PlotTriangle(const Vertex& v1, const Vertex& v2, const Vertex& v3);
 	
 	void DrawSpansBetweenEdges(const Edge& e1, const Edge& e2);
 	void DrawSpan(const Span& span, int y);
@@ -123,64 +148,31 @@ private:
 	
 	void RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MVP, const mat4& MV);
 	
+	float3 Trace(Ray& ray);
+	void IntersectTri(Ray& ray, const Tri& tri);
+	Tri tri[TRI_N];
+
 	// Scene:
-	struct Camera
+	class Camera
 	{
-		float3 eye = { 0.0f, 5.0f, 10.0f };
-		float3 target = { 0.0f, 0.0f, 0.0f };
+	public:
+		float aspect = static_cast<float>(SCREEN_WIDTH) / static_cast<float>(SCREEN_HEIGHT);
+		float3 eye = { 0.0f, 0.0f, 0.0f };
+		float3 target = { 0.0f, 0.0f, 1.0f };
 		float3 up = { 0.0f, 1.0f, 0.0f };
+		float3 topLeft = float3(-aspect, 1, 0);
+		float3 topRight = float3(aspect, 1, 0);
+		float3 bottomLeft = float3(-aspect, -1, 0);
+
+		Ray GetPrimaryRay(const float pX, const float pY);
+		void BuildViewPlane(float fovY = 60.0f, float focalLength = 1.0f);
 	};
 
 	Camera mainCam;
 
-	struct Cube
-	{
-		const float size = 1.f;
-
-		std::vector<Vertex> cubeVer =
-		{
-			{{-size, -size,  size}, 0xFFFFFFFF}, // 0 - Front Bottom Left
-			{{ size, -size,  size}, 0xFFFFFFFF}, // 1 - Front Bottom Right
-			{{ size,  size,  size}, 0xFFFFFFFF}, // 2 - Front Top Right
-			{{-size,  size,  size}, 0xFFFFFFFF}, // 3 - Front Top Left
-
-			{{-size, -size, -size}, 0xFFFFFFFF}, // 4 - Back Bottom Left
-			{{ size, -size, -size}, 0xFFFFFFFF}, // 5 - Back Bottom Right
-			{{ size,  size, -size}, 0xFFFFFFFF}, // 6 - Back Top Right
-			{{-size,  size, -size}, 0xFFFFFFFF}  // 7 - Back Top Left
-		};
-
-		std::vector<Triangle> cubeTri =
-		{
-			// Front (+Z)
-			{ 0xFFFFFFFF, { 0, 2, 1 } },
-			{ 0xFFFFFFFF, { 0, 3, 2 } },
-
-			// Right (+X)
-			{ 0xFFFFFFFF, { 1, 2, 6 } },
-			{ 0xFFFFFFFF, { 1, 6, 5 } },
-
-			// Back (-Z)
-			{ 0xFFFFFFFF, { 5, 6, 7 } },
-			{ 0xFFFFFFFF, { 5, 7, 4 } },
-
-			// Left (-X)
-			{ 0xFFFFFFFF, { 4, 7, 3 } },
-			{ 0xFFFFFFFF, { 4, 3, 0 } },
-
-			// Top (+Y)
-			{ 0xFFFFFFFF, { 3, 7, 6 } },
-			{ 0xFFFFFFFF, { 3, 6, 2 } },
-
-			// Bottom (-Y)
-			{ 0xFFFFFFFF, { 4, 0, 1 } },
-			{ 0xFFFFFFFF, { 4, 1, 5 } }
-		};
-	};
-
-	// Project all to screen
-	Vertex projected[8];
-
 	float angle = 0.f;
-	Cube cube1;
+
+	Mesh cube1;
+	Mesh cube2;
+	Texture* cubeTex = nullptr;
 };
