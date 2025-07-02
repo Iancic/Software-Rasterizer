@@ -9,7 +9,6 @@
 #include <deque>
 #include <cassert>
 #include <unordered_map>
-#include "tiny_obj_loader.h"
 #include "Common.hpp"
 
 struct int2
@@ -42,6 +41,21 @@ struct float2
 inline bool operator==(const float2& a, const float2& b)
 {
 	return a.x == b.x && a.y == b.y;
+}
+
+inline float2 operator-(const float2& a, const float2& b)
+{
+	return { a.x - b.x, a.y - b.y };
+}
+
+inline float2 operator+(const float2& a, const float2& b)
+{
+	return { a.x + b.x, a.y + b.y };
+}
+
+inline float2 operator*(const float2& a, const float& b)
+{
+	return { a.x * b, a.y * b };
 }
 
 struct float3
@@ -228,74 +242,16 @@ class Mesh
 {
 public:
 	Mesh() = default;
-	Mesh(std::vector<Triangle> trianglesArg, std::vector<Vertex> vertArg, std::vector<float2>texArg, std::vector<float3>normalArg, std::deque<FaceGroup> facesArg)
-		: triangle(trianglesArg), vertices(vertArg), texCoords(texArg), normals(normalArg), face_groups(facesArg) { };
+	Mesh(std::vector<Triangle> trianglesArg, std::vector<Tri> bvhTriArg, std::vector<Vertex> vertArg, std::vector<float2>texArg, std::vector<float3>normalArg, std::deque<FaceGroup> facesArg)
+		: bvhTri(bvhTriArg), triangle(trianglesArg), vertices(vertArg), texCoords(texArg), normals(normalArg), face_groups(facesArg) { };
 	std::vector<Vertex> vertices;
 	std::vector<float2> texCoords;
 	std::vector<float3> normals;
 	std::vector<Triangle> triangle;
+	std::vector<Tri> bvhTri;
 	std::deque<FaceGroup> face_groups;
 
 };
-
-static inline Mesh LoadMeshTinyObj(const std::string& filepath)
-{
-	tinyobj::attrib_t attrib;
-	std::vector<tinyobj::shape_t> shapes;
-	std::vector<tinyobj::material_t> materials;
-	std::string warn, err;
-
-	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath.c_str());
-
-	if (!warn.empty()) std::cout << "WARN: " << warn << std::endl;
-	if (!err.empty()) std::cerr << "ERR: " << err << std::endl;
-	if (!ret) throw std::runtime_error("Failed to load OBJ");
-
-	std::vector<Vertex> vertices;
-	std::vector<Triangle> triangles;
-
-	for (const auto& shape : shapes) {
-		size_t indexOffset = 0;
-		for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
-			int fv = shape.mesh.num_face_vertices[f]; // should be 3 for triangles
-
-			Triangle tri;
-			for (int v = 0; v < fv; v++) {
-				tinyobj::index_t idx = shape.mesh.indices[indexOffset + v];
-
-				Vertex vert{};
-				vert.position = {
-					attrib.vertices[3 * idx.vertex_index + 0],
-					attrib.vertices[3 * idx.vertex_index + 1],
-					attrib.vertices[3 * idx.vertex_index + 2]
-				};
-
-				if (idx.texcoord_index >= 0) {
-					vert.uv = {
-						attrib.texcoords[2 * idx.texcoord_index + 0],
-						1.0f - attrib.texcoords[2 * idx.texcoord_index + 1] // flip Y
-					};
-				}
-
-				if (idx.normal_index >= 0) {
-					vert.normal = {
-						attrib.normals[3 * idx.normal_index + 0],
-						attrib.normals[3 * idx.normal_index + 1],
-						attrib.normals[3 * idx.normal_index + 2]
-					};
-				}
-
-				tri.indices[v] = static_cast<int>(vertices.size());
-				vertices.push_back(vert);
-			}
-
-			triangles.push_back(tri);
-			indexOffset += fv;
-		}
-	}
-
-	return Mesh(triangles, vertices, {}, {}, {}); // populate other fields as needed
-}
 
 static inline void ParseFaceVertex(const std::string& tuple, FaceVertex& faceVert)
 {
@@ -335,6 +291,8 @@ static inline Mesh LoadMesh(const char* filePath)
 	std::vector<float3> normals;
 	std::deque<FaceGroup> face_groups;
 	std::vector<Triangle> triangles;
+	std::vector<Tri> bvhTri;
+
 	face_groups.emplace_back();
 	FaceGroup* cur_face_group = &face_groups.back();
 
@@ -392,9 +350,11 @@ static inline Mesh LoadMesh(const char* filePath)
 		for (size_t n = 0; n < group.faceVertices.size(); n += 3) 
 		{
 			const float3& v0 = vertices[group.faceVertices[n].vertexIndex].position;
-			const float3& v2 = vertices[group.faceVertices[n + 1].vertexIndex].position;
-			const float3& v1 = vertices[group.faceVertices[n + 2].vertexIndex].position;
-			
+			const float3& v1 = vertices[group.faceVertices[n + 1].vertexIndex].position;
+			const float3& v2 = vertices[group.faceVertices[n + 2].vertexIndex].position;
+			float3 c = (v0 + v1 + v2) / 3.0f;
+			bvhTri.push_back(Tri{ v0, v1, v2, c });
+
 			Triangle t;
 			t.indices[0] = group.faceVertices[n].vertexIndex;
 			t.indices[2] = group.faceVertices[n + 1].vertexIndex;
@@ -429,11 +389,22 @@ static inline Mesh LoadMesh(const char* filePath)
 		}
 	}
 
-	return Mesh(finalTriangles, finalVertices, texCoords, normals, face_groups);
+	return Mesh(finalTriangles, bvhTri, finalVertices, texCoords, normals, face_groups);
 };
 
 namespace mat
 {
+	inline mat4 Transpose(const mat4& m)
+	{
+		mat4 t;
+
+		for (int i = 0; i < 4; ++i)
+			for (int j = 0; j < 4; ++j)
+				t.m[i][j] = m.m[j][i];
+
+		return t;
+	}
+
 	static inline mat4 Translate(const float pX, const float pY, const float pZ)
 	{
 		return {
@@ -501,7 +472,8 @@ namespace mat
 		float yScale = 1.0f / tanf(fovY / 2.0f);
 		float xScale = yScale / aspect;
 
-		return mat4{
+		return mat4
+		{
 			xScale, 0,      0,                          0,
 			0,      yScale, 0,                          0,
 			0,      0,      zf / (zf - zn),             1,
@@ -510,57 +482,23 @@ namespace mat
 	};
 };
 
-// Classes For Triangle fill
-// Article by https://joshbeam.com/articles/triangle_rasterization/
-class Edge
+static inline float3 operator*(const mat4& mat, const float3& vec) 
 {
-public:
-	int X1, Y1, X2, Y2;
-	float U1, V1, U2, V2;
-	float Z1, Z2;
-	// this makes sure first point of the edge is the one with lower y values
-	Edge(int x1, int y1, int x2, int y2, float u1, float v1, float u2, float v2, float z1, float z2)
-	{
-		Z1 = z1;
-		Z2 = z2;
-		if (y1 < y2)
-		{
-			X1 = x1; Y1 = y1; U1 = u1; V1 = v1; 
-			X2 = x2; Y2 = y2; U2 = u2; V2 = v2; 
-		}
-		else
-		{
-			X1 = x2; Y1 = y2; U1 = u2; V1 = v2; 
-			X2 = x1; Y2 = y1; U2 = u1; V2 = v1;
-		}
-	}
-};
+	float x = mat.m[0][0] * vec.x + mat.m[0][1] * vec.y + mat.m[0][2] * vec.z + mat.m[0][3];
+	float y = mat.m[1][0] * vec.x + mat.m[1][1] * vec.y + mat.m[1][2] * vec.z + mat.m[1][3];
+	float z = mat.m[2][0] * vec.x + mat.m[2][1] * vec.y + mat.m[2][2] * vec.z + mat.m[2][3];
+	float w = mat.m[3][0] * vec.x + mat.m[3][1] * vec.y + mat.m[3][2] * vec.z + mat.m[3][3];
 
-// a span is an edge but without the y cause it's parralel to the screen we just go down
-// it's the span on horizontal
-// when filling we go down with this one
-class Span
-{
-public:
-	int X1, X2;
-	float U1, V1, U2, V2;
-	float Z1, Z2; // For perspective correction
-
-	// same as the edge we have to make sure the x1 is the one that's the lowest.
-	Span(int x1, int x2, float u1, float v1, float u2, float v2, float z1, float z2)
+	// Perspective divide, in case the matrix includes projection
+	if (w != 0.0f && w != 1.0f) 
 	{
-		if (x1 < x2)
-		{
-			X1 = x1; U1 = u1; V1 = v1;
-			X2 = x2; U2 = u2; V2 = v2;
-		}
-		else
-		{
-			X1 = x2; U1 = u2; V1 = v2;
-			X2 = x1; U2 = u1; V2 = v1;
-		}
+		x /= w;
+		y /= w;
+		z /= w;
 	}
-};
+
+	return float3(x, y, z);
+}
 
 static inline uint32_t MakeColor(float R, float G, float B, float A)
 {
@@ -596,7 +534,35 @@ static inline double rndDouble(double min, double max) // Random double in this 
 	return ((double)Lehmer32() / (double)(0x7FFFFFFF)) * (max - min) + min;
 }
 
-static inline int rndInt(int min, int max) // Random int in this ranger
+static inline int rndInt(int min, int max) // Random int in this range
 {
 	return (Lehmer32() % (max - min)) + min;
+}
+
+static inline mat4 InverseAffine(const mat4& m)
+{
+	float3 a = { m.m[0][0], m.m[0][1], m.m[0][2] }; // Right
+	float3 b = { m.m[1][0], m.m[1][1], m.m[1][2] }; // Up
+	float3 c = { m.m[2][0], m.m[2][1], m.m[2][2] }; // Forward
+	float3 t = { m.m[3][0], m.m[3][1], m.m[3][2] }; // Translation
+
+	// Invert rotation part (transpose)
+	float3 iA = { a.x, b.x, c.x };
+	float3 iB = { a.y, b.y, c.y };
+	float3 iC = { a.z, b.z, c.z };
+
+	// Invert translation
+	float3 iT = {
+		-Dot(iA, t),
+		-Dot(iB, t),
+		-Dot(iC, t)
+	};
+
+	mat4 inv = mat4::Identity();
+	inv.m[0][0] = iA.x; inv.m[0][1] = iA.y; inv.m[0][2] = iA.z;
+	inv.m[1][0] = iB.x; inv.m[1][1] = iB.y; inv.m[1][2] = iB.z;
+	inv.m[2][0] = iC.x; inv.m[2][1] = iC.y; inv.m[2][2] = iC.z;
+	inv.m[3][0] = iT.x; inv.m[3][1] = iT.y; inv.m[3][2] = iT.z;
+
+	return inv;
 }

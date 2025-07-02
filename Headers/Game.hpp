@@ -48,23 +48,8 @@ static inline LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 	}
 
 	case WM_KEYDOWN:
-		switch (wParam) 
+		switch (wParam)
 		{
-		case VK_ESCAPE:
-			PostQuitMessage(0);
-			break;
-		case 'W': case VK_UP:
-			input.moveForward = true;
-			break;
-		case 'S': case VK_DOWN:
-			input.moveBackward = true;
-			break;
-		case 'A': case VK_LEFT:
-			input.moveLeft = true;
-			break;
-		case 'D': case VK_RIGHT:
-			input.moveRight = true;
-			break;
 		case 'T':
 		{
 			if (gameState.rasterized == true)
@@ -79,6 +64,22 @@ static inline LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 			}
 			break;
 		}
+		case 'W': case VK_UP:
+			input.moveForward = true;
+			break;
+		case 'S': case VK_DOWN:
+			input.moveBackward = true;
+			break;
+		case 'A': case VK_LEFT:
+			input.moveLeft = true;
+			break;
+		case 'D': case VK_RIGHT:
+			input.moveRight = true;
+			break;
+		case VK_ESCAPE:
+			PostQuitMessage(0);
+			break;
+		
 		}
 		return 0;
 
@@ -99,6 +100,7 @@ static inline LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 			break;
 		}
 		return 0;
+		
 	}
 
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -139,40 +141,71 @@ private:
 	void Line(uint32_t color, float x1, float y1, float x2, float y2);
 	void TriangleWireframe(uint32_t color, float x1, float y1, float x2, float y2, float x3, float y3);
 	void PlotTriangle(const Vertex& v1, const Vertex& v2, const Vertex& v3);
-	
-	void DrawSpansBetweenEdges(const Edge& e1, const Edge& e2);
-	void DrawSpan(const Span& span, int y);
 
 	std::vector<Triangle> CullBackFaces(std::vector<float3>& viewVertices, std::vector<Triangle>& triangles);
 	bool BackFacing(const Triangle& triangle, std::vector<float3>& viewVerts);
 	
-	void RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MVP, const mat4& MV);
+	void ClipTriangle();
+
+	void RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj);
 	
-	float3 Trace(Ray& ray);
+	float3 Trace(Ray& ray, const mat4& modelMat);
 	void IntersectTri(Ray& ray, const Tri& tri);
 	Tri tri[TRI_N];
 
-	// Scene:
 	class Camera
 	{
-	public:
-		float aspect = static_cast<float>(SCREEN_WIDTH) / static_cast<float>(SCREEN_HEIGHT);
+		public:
+
 		float3 eye = { 0.0f, 0.0f, 0.0f };
-		float3 target = { 0.0f, 0.0f, 1.0f };
+		float3 target = { 0.0f, 0.0f, -1.0f };
 		float3 up = { 0.0f, 1.0f, 0.0f };
 		float3 topLeft = float3(-aspect, 1, 0);
 		float3 topRight = float3(aspect, 1, 0);
 		float3 bottomLeft = float3(-aspect, -1, 0);
 
-		Ray GetPrimaryRay(const float pX, const float pY);
-		void BuildViewPlane(float fovY = 60.0f, float focalLength = 1.0f);
+		float zNear = 0.1f;
+
+		float aspect = float(SCREEN_WIDTH) / float(SCREEN_HEIGHT);
+		float fovRad = 60 * (3.14159f / 180.0f);
+
+		Ray GetPrimaryRay(const float pX, const float pY)
+		{
+			float u = static_cast<float>(pX) / static_cast<float>(SCREEN_WIDTH);
+			float v = static_cast<float>(pY) / static_cast<float>(SCREEN_HEIGHT);
+
+			// Interpolate across the screen plane
+			float3 screenPoint = topLeft + (topRight - topLeft) * u + (bottomLeft - topLeft) * v;
+			return Ray(eye, normalize(screenPoint - eye));
+		};
+
+		void BuildViewPlane(float fovY = 60.0f, float focalLength = 1.0f)
+		{
+			float aspect = static_cast<float>(SCREEN_WIDTH) / static_cast<float>(SCREEN_HEIGHT);
+
+			// Basis vectors
+			float3 forward = normalize(target - eye);
+			float3 right = normalize(Cross(forward, up));
+			float3 upVec = normalize(Cross(right, forward));
+
+			// Convert FOV to view plane height
+			float halfHeight = tanf(fovY * 0.5f * 3.14159f / 180.0f);
+			float halfWidth = halfHeight * aspect;
+
+			// View plane center
+			float3 center = eye + forward * focalLength;
+
+			// Corner positions in world space
+			topLeft = center + upVec * halfHeight - right * halfWidth;
+			topRight = center + upVec * halfHeight + right * halfWidth;
+			bottomLeft = center - upVec * halfHeight - right * halfWidth;
+		};
 	};
+
+	float rotation = 0.f;
 
 	Camera mainCam;
 
-	float angle = 0.f;
-
-	Mesh cube1;
-	Mesh cube2;
-	Texture* cubeTex = nullptr;
+	Mesh teapot;
+	Texture* woodTex = nullptr;
 };
