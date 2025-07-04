@@ -2,8 +2,7 @@
 
 void Game::Init()
 {
-	woodTex = new Texture("Assets/container.jpg");
-	teapot = LoadMesh("Assets/Teapot/Teapot.obj");
+	teapot = new Model();
 
 	previousTime = std::chrono::high_resolution_clock::now();
 
@@ -20,11 +19,18 @@ void Game::Init()
 	bitmapInfo.bmiHeader.biPlanes = 1;
 	bitmapInfo.bmiHeader.biBitCount = 32;
 	bitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+	blases.push_back(tinybvh::BLASInstance(0)); // 0 as index arg cause for now it's one object
+
+	//for (auto model : models) 
+	bvh.push_back(teapot->modelBVH);
+
+	tlas.Build(blases.data(), static_cast<uint32_t>(blases.size()), bvh.data(), static_cast<uint32_t>(bvh.size()));
 }
 
 void Game::Update()
 {
-	rotation += 0.01f;
+	rotationIncrement += 0.01f;
 
 	mainCam.BuildViewPlane();
 
@@ -42,7 +48,10 @@ void Game::Update()
 	else if (input.moveRight)
 		mainCam.eye.x += 3.f * deltaTime;
 
+	mainCam.BuildViewPlane();
+
 	HandleInput();
+
 }
 
 bool Game::createWindow(int widht, int height, const wchar_t* title)
@@ -220,13 +229,13 @@ void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2)
 			v = std::clamp(v, 0.0f, 0.999f);
 
 			// Sample texture
-			int texX = int(u * woodTex->GetWidth());
-			int texY = int(v * woodTex->GetHeight());
-			int texIndex = (texY * woodTex->GetWidth() + texX) * woodTex->GetChannels();
+			int texX = int(u * teapot->texture->GetWidth());
+			int texY = int(v * teapot->texture->GetHeight());
+			int texIndex = (texY * teapot->texture->GetWidth() + texX) * teapot->texture->GetChannels();
 
-			uint8_t r = woodTex->GetTexel(texIndex + 0);
-			uint8_t g = woodTex->GetTexel(texIndex + 1);
-			uint8_t b = woodTex->GetTexel(texIndex + 2);
+			uint8_t r = teapot->texture->GetTexel(texIndex + 0);
+			uint8_t g = teapot->texture->GetTexel(texIndex + 1);
+			uint8_t b = teapot->texture->GetTexel(texIndex + 2);
 
 			// Write to framebuffer
 			depthBuffer[index] = z;
@@ -286,6 +295,7 @@ void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vect
 	}
 }
 */
+
 void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj)
 {
 	auto interpolate = [](const Vertex& a, const Vertex& b, float t) -> Vertex {
@@ -407,12 +417,11 @@ void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vect
 	}
 }
 
-float3 Game::Trace(Ray& ray, const mat4& modelMat)
+float3 Game::Trace(tinybvh::Ray& ray, const mat4& modelMat)
 {
+	tlas.IntersectTLAS(ray);
 
-
-
-	return (ray.T == 1e30f) ? float3{ 0.f, 255.f, 0.f } : float3{ 255.f, 0.f, 0.f };
+	return (ray.hit.t >= BVH_FAR) ? float3{ 0.f, 255.f, 0.f } : float3{ 255.f, 0.f, 0.f };
 }
 
 void Game::IntersectTri(Ray& ray, const Tri& tri)
@@ -438,20 +447,30 @@ void Game::Render()
 	UpdateWindow();
 	
 	Clear(0x00000000);
-
-	mat4 model = (mat::Translate(0.f, -4.5f, 16.f) + mat::Scale(1.f, 1.f, 1.f)) * mat::Rotate(0.1f, 1.f, 0.1f, rotation);
+	float3 translation = float3{ 0.f, -4.5f, 16.f };
+	float3 scale = float3{ 1.f, 1.f, 1.f };
+	float3 rotation = float3{};
+	mat4 model = (mat::Translate(0.f, -4.5f, 16.f) + mat::Scale(1.f, 1.f, 1.f)) * mat::Rotate(0.1f, 1.f, 0.1f, rotationIncrement);
 	mat4 view = mat::LookAt(mainCam.eye, mainCam.eye + mainCam.target, mainCam.up);
 	mat4 proj = mat::Perspective(mainCam.fovRad, mainCam.aspect, 1.0f, 500.0f);
 
 	mat4 MV = view * model;
 	mat4 MVP = proj * view * model;
 
-	RenderObject(0xFFFFFFFF, teapot.vertices, teapot.triangle, MV, proj);
+	// for now it's just one model so hardcoded
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = 0; j < 4; j++)
+		{
+			blases[0].transform[i * 4 + j] = model.m[j][i];
+		}
+	}
 
-	/*
+	tlas.Build(blases.data(), static_cast<uint32_t>(blases.size()), bvh.data(), static_cast<uint32_t>(bvh.size()));
+
 	if (gameState.rasterized == true) 
 	{
-		
+		RenderObject(0xFFFFFFFF, teapot->mesh.vertices, teapot->mesh.triangle, MV, proj);
 	}
 	else if (gameState.raytraced == true)
 	{
@@ -459,14 +478,13 @@ void Game::Render()
 		{
 			for (int x = 0; x < SCREEN_WIDTH; x++)
 			{
-				Ray tracedRay = mainCam.GetPrimaryRay(x, y);
+				tinybvh::Ray tracedRay = mainCam.GetPrimaryRay(x, y);
 				float3 trace = Trace(tracedRay, model);
 				uint32_t pixel = MakeColor(int(trace.x), int(trace.y), int(trace.z), 255);
 				Plot(pixel, x, y);
 			}
 		}
 	}
-	*/
 
 	InvalidateRect(window, nullptr, FALSE);
 }

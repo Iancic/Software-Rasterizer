@@ -9,12 +9,19 @@
 #include <deque>
 #include <cassert>
 #include <unordered_map>
+#include "tinyBVH.hpp"
 #include "Common.hpp"
 
 struct int2
 {
 	int x;
 	int y;
+};
+
+struct uint2
+{
+	uint32_t x;
+	uint32_t y;
 };
 
 static inline int cross(int2& a, int2& b, int2& p)
@@ -242,13 +249,13 @@ class Mesh
 {
 public:
 	Mesh() = default;
-	Mesh(std::vector<Triangle> trianglesArg, std::vector<Tri> bvhTriArg, std::vector<Vertex> vertArg, std::vector<float2>texArg, std::vector<float3>normalArg, std::deque<FaceGroup> facesArg)
-		: bvhTri(bvhTriArg), triangle(trianglesArg), vertices(vertArg), texCoords(texArg), normals(normalArg), face_groups(facesArg) { };
+	Mesh(std::vector<Triangle> trianglesArg, std::vector<tinybvh::bvhvec4> fatTris, std::vector<Vertex> vertArg, std::vector<float2>texArg, std::vector<float3>normalArg, std::deque<FaceGroup> facesArg)
+		: fatTriangles(fatTris), triangle(trianglesArg), vertices(vertArg), texCoords(texArg), normals(normalArg), face_groups(facesArg) { };
 	std::vector<Vertex> vertices;
 	std::vector<float2> texCoords;
 	std::vector<float3> normals;
 	std::vector<Triangle> triangle;
-	std::vector<Tri> bvhTri;
+	std::vector<tinybvh::bvhvec4> fatTriangles;
 	std::deque<FaceGroup> face_groups;
 
 };
@@ -291,7 +298,7 @@ static inline Mesh LoadMesh(const char* filePath)
 	std::vector<float3> normals;
 	std::deque<FaceGroup> face_groups;
 	std::vector<Triangle> triangles;
-	std::vector<Tri> bvhTri;
+	std::vector<tinybvh::bvhvec4> fatTris;
 
 	face_groups.emplace_back();
 	FaceGroup* cur_face_group = &face_groups.back();
@@ -309,6 +316,7 @@ static inline Mesh LoadMesh(const char* filePath)
 			float3 vertex;
 			stream >> vertex.x >> vertex.y >> vertex.z;
 			vertices.push_back(Vertex{ vertex });
+			//fatTris.push_back(tinybvh::bvhvec4{ vertex.x, vertex.y, vertex.z, 0.f });
 		}
 		else if (type == "vt") // VERTEX TEXTURE COORD
 		{
@@ -349,11 +357,6 @@ static inline Mesh LoadMesh(const char* filePath)
 	{
 		for (size_t n = 0; n < group.faceVertices.size(); n += 3) 
 		{
-			const float3& v0 = vertices[group.faceVertices[n].vertexIndex].position;
-			const float3& v1 = vertices[group.faceVertices[n + 1].vertexIndex].position;
-			const float3& v2 = vertices[group.faceVertices[n + 2].vertexIndex].position;
-			float3 c = (v0 + v1 + v2) / 3.0f;
-			bvhTri.push_back(Tri{ v0, v1, v2, c });
 
 			Triangle t;
 			t.indices[0] = group.faceVertices[n].vertexIndex;
@@ -381,6 +384,8 @@ static inline Mesh LoadMesh(const char* filePath)
 				v.normal = normals[fv.normalIndex];
 
 				int index = static_cast<int>(finalVertices.size());
+				fatTris.push_back(tinybvh::bvhvec4{ v.position.x, v.position.y, v.position.z, 0.f });
+
 				finalVertices.push_back(v);
 				t.indices[j] = index;
 			}
@@ -389,7 +394,7 @@ static inline Mesh LoadMesh(const char* filePath)
 		}
 	}
 
-	return Mesh(finalTriangles, bvhTri, finalVertices, texCoords, normals, face_groups);
+	return Mesh(finalTriangles, fatTris, finalVertices, texCoords, normals, face_groups);
 };
 
 namespace mat

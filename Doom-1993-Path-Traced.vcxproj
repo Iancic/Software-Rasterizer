@@ -161,6 +161,7 @@
     <ClCompile Include="Source\Program.cpp" />
     <ClCompile Include="Source\stb_image.cpp" />
     <ClCompile Include="Source\Texture.cpp" />
+    <ClCompile Include="Source\tinyBVH.cpp" />
     <ClCompile Include="Source\tiny_obj_loader.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -173,6 +174,8 @@
     <ClInclude Include="Headers\Program.hpp" />
     <ClInclude Include="Headers\stb_image.h" />
     <ClInclude Include="Headers\Texture.hpp" />
+    <ClInclude Include="Headers\tinyBVH.hpp" />
+    <ClInclude Include="Headers\tiny_bvh.h" />
     <ClInclude Include="Headers\tiny_obj_loader.h" />
     <ClInclude Include="Header\Program.hpp" />
     <ClInclude Include="Headers\Ray.hpp" />

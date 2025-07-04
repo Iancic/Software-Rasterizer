@@ -149,7 +149,7 @@ private:
 
 	void RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj);
 	
-	float3 Trace(Ray& ray, const mat4& modelMat);
+	float3 Trace(tinybvh::Ray& ray, const mat4& modelMat);
 	void IntersectTri(Ray& ray, const Tri& tri);
 	Tri tri[TRI_N];
 
@@ -169,14 +169,15 @@ private:
 		float aspect = float(SCREEN_WIDTH) / float(SCREEN_HEIGHT);
 		float fovRad = 60 * (3.14159f / 180.0f);
 
-		Ray GetPrimaryRay(const float pX, const float pY)
+		tinybvh::Ray GetPrimaryRay(const float pX, const float pY)
 		{
 			float u = static_cast<float>(pX) / static_cast<float>(SCREEN_WIDTH);
 			float v = static_cast<float>(pY) / static_cast<float>(SCREEN_HEIGHT);
 
 			// Interpolate across the screen plane
 			float3 screenPoint = topLeft + (topRight - topLeft) * u + (bottomLeft - topLeft) * v;
-			return Ray(eye, normalize(screenPoint - eye));
+			float3 dir = normalize(screenPoint - eye);
+			return tinybvh::Ray(tinybvh::bvhvec3(eye.x, eye.y, eye.z), tinybvh::bvhvec3(dir.x, dir.y, dir.z));
 		};
 
 		void BuildViewPlane(float fovY = 60.0f, float focalLength = 1.0f)
@@ -184,9 +185,9 @@ private:
 			float aspect = static_cast<float>(SCREEN_WIDTH) / static_cast<float>(SCREEN_HEIGHT);
 
 			// Basis vectors
-			float3 forward = normalize(target - eye);
-			float3 right = normalize(Cross(forward, up));
-			float3 upVec = normalize(Cross(right, forward));
+			float3 forward = normalize(eye - target);
+			float3 right = normalize(Cross(up, forward));
+			float3 upVec = normalize(Cross(forward, right));
 
 			// Convert FOV to view plane height
 			float halfHeight = tanf(fovY * 0.5f * 3.14159f / 180.0f);
@@ -202,10 +203,15 @@ private:
 		};
 	};
 
-	float rotation = 0.f;
+	float rotationIncrement = 0.f;
 
 	Camera mainCam;
 
-	Mesh teapot;
-	Texture* woodTex = nullptr;
+	Model* teapot = nullptr;
+
+	tinybvh::BVH tlas;
+
+	std::vector <tinybvh::BVHBase*> bvh = { };
+
+	std::vector<tinybvh::BLASInstance> blases = { };
 };
