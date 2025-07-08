@@ -32,13 +32,12 @@ void Game::Update()
 {
 	rotationIncrement += 0.01f;
 
-	mainCam.BuildViewPlane();
-
 	auto currentTime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<float> elapsed = currentTime - previousTime;
 	float deltaTime = elapsed.count(); // deltaTime in seconds
 	previousTime = currentTime;
 
+	/*
 	if (input.moveForward)
 		mainCam.eye.z += 3.f * deltaTime;
 	else if (input.moveBackward)
@@ -47,11 +46,9 @@ void Game::Update()
 		mainCam.eye.x -= 3.f * deltaTime;
 	else if (input.moveRight)
 		mainCam.eye.x += 3.f * deltaTime;
-
-	mainCam.BuildViewPlane();
+	*/
 
 	HandleInput();
-
 }
 
 bool Game::createWindow(int widht, int height, const wchar_t* title)
@@ -170,10 +167,6 @@ bool Game::BackFacing(const Triangle& triangle, std::vector<float3>& viewVerts)
 	return Dot(normal, toCamera) < 0.f;
 }
 
-void Game::ClipTriangle()
-{
-}
-
 void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2)
 {
 	// Bounding box
@@ -243,58 +236,6 @@ void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2)
 		}
 	}
 }
-
-/*
-void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MVP, const mat4& MV)
-{
-	// HERE WE GO TO MODEL AND VIEW SPACE
-	std::vector<float3> viewVertices;
-	for (size_t i = 0; i < vertices.size(); ++i)
-	{
-		float4 viewPos = vertices[i].pos4() * MV;
-
-		// Now we have the objects in view space and we check for near clipping
-		// This means if viewPos.z < nearClipPlane, pop back triangle
-
-
-		viewVertices.push_back({ viewPos.x, viewPos.y, viewPos.z });  // here we store the new triangle
-	}
-
-	// HERE WE CLIP AGAINST CAMERA NEAR
-
-	std::vector<Vertex> projected(vertices.size());
-	std::vector<float4> clip(vertices.size());
-
-	for (size_t i = 0; i < vertices.size(); ++i)
-	{
-		float4 c = vertices[i].pos4() * MVP;
-		if (std::abs(c.w) < 1e-5f) continue; // avoid divide-by-zero
-		float ndcX = c.x / c.w;
-		float ndcY = c.y / c.w;
-		float ndcZ = c.z / c.w;
-
-		float screenX = (ndcX + 1.0f) * 0.5f * SCREEN_WIDTH;
-		float screenY = (1.0f - (ndcY + 1.0f) * 0.5f) * SCREEN_HEIGHT;
-		float zDepth = (ndcZ + 1.0f) * 0.5f;
-
-		projected[i] = Vertex{{screenX, screenY, zDepth}, vertices[i].uv};
-	}
-
-	auto culledTriangles = CullBackFaces(viewVertices, triangles);
-
-	for (size_t i = 0; i < culledTriangles.size(); ++i)
-	{
-		auto& triangle = culledTriangles[i];
-
-		const Vertex& v0 = projected[triangle.indices[0]];
-		const Vertex& v1 = projected[triangle.indices[1]];
-		const Vertex& v2 = projected[triangle.indices[2]];
-
-		PlotTriangle(v0, v1, v2);
-		//TriangleWireframe(0xFFFFFFFF, v0.position.x, v0.position.y, v1.position.x, v1.position.y, v2.position.x, v2.position.y);
-	}
-}
-*/
 
 void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj)
 {
@@ -485,6 +426,8 @@ void Game::Render()
 			}
 		}
 	}
+
+	mainCam.BuildViewPlane();
 
 	InvalidateRect(window, nullptr, FALSE);
 }

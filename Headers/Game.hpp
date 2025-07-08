@@ -157,12 +157,13 @@ private:
 	{
 		public:
 
-		float3 eye = { 0.0f, 0.0f, 0.0f };
+		float3 eye = { 0.0f, 0.0f, -5.0f };
 		float3 target = { 0.0f, 0.0f, -1.0f };
 		float3 up = { 0.0f, 1.0f, 0.0f };
 		float3 topLeft = float3(-aspect, 1, 0);
 		float3 topRight = float3(aspect, 1, 0);
 		float3 bottomLeft = float3(-aspect, -1, 0);
+		float3 forward;
 
 		float zNear = 0.1f;
 
@@ -185,7 +186,7 @@ private:
 			float aspect = static_cast<float>(SCREEN_WIDTH) / static_cast<float>(SCREEN_HEIGHT);
 
 			// Basis vectors
-			float3 forward = normalize(eye - target);
+			forward = normalize(target - eye);
 			float3 right = normalize(Cross(up, forward));
 			float3 upVec = normalize(Cross(forward, right));
 

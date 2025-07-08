@@ -357,7 +357,6 @@ static inline Mesh LoadMesh(const char* filePath)
 	{
 		for (size_t n = 0; n < group.faceVertices.size(); n += 3) 
 		{
-
 			Triangle t;
 			t.indices[0] = group.faceVertices[n].vertexIndex;
 			t.indices[2] = group.faceVertices[n + 1].vertexIndex;
@@ -366,6 +365,7 @@ static inline Mesh LoadMesh(const char* filePath)
 			
 		}
 	}
+
 	std::vector<Triangle> finalTriangles;
 	std::vector<Vertex> finalVertices;
 	for (const auto& group : face_groups) 
