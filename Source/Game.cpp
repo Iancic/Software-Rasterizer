@@ -2,11 +2,15 @@
 
 void Game::Init()
 {
-	teapot = new Model();
+	testCharacter = new Model("Assets/Snake/Source/Old_Snake.obj");
+	models.push_back(testCharacter);
+
+	testFloor = new Model("Assets/Floor/Floor.obj");
+	models.push_back(testFloor);
 
 	previousTime = std::chrono::high_resolution_clock::now();
 
-	std::wstring title = L"Doom 1993 Path Traced";
+	std::wstring title = L"Hybrid Renderer";
 	createWindow(SCREEN_WIDTH, SCREEN_HEIGHT, title.c_str());
 
 	// Init framebuffer and depth buffer
@@ -20,10 +24,11 @@ void Game::Init()
 	bitmapInfo.bmiHeader.biBitCount = 32;
 	bitmapInfo.bmiHeader.biCompression = BI_RGB;
 
-	blases.push_back(tinybvh::BLASInstance(0)); // 0 as index arg cause for now it's one object
-
-	//for (auto model : models) 
-	bvh.push_back(teapot->modelBVH);
+	for (int i = 0; i < models.size(); ++i)
+	{
+		blases.push_back(tinybvh::BLASInstance(i));
+		bvh.push_back(models[i]->modelBVH);
+	}
 
 	tlas.Build(blases.data(), static_cast<uint32_t>(blases.size()), bvh.data(), static_cast<uint32_t>(bvh.size()));
 }
@@ -167,7 +172,7 @@ bool Game::BackFacing(const Triangle& triangle, std::vector<float3>& viewVerts)
 	return Dot(normal, toCamera) < 0.f;
 }
 
-void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2)
+void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, const Mesh& mesh, const int matIndex)
 {
 	// Bounding box
 	int minX = std::max(0, (int)std::floor(std::min({ v0.position.x, v1.position.x, v2.position.x })));
@@ -197,38 +202,45 @@ void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2)
 			if (w0 < 0 || w1 < 0 || w2 < 0) continue; // Outside
 
 			// Interpolate depth (perspective correct)
-			float invZ = 1.0f / v0.position.z * w0 +
-				1.0f / v1.position.z * w1 +
-				1.0f / v2.position.z * w2;
-
+			float invZ = 1.0f / v0.position.z * w0 + 1.0f / v1.position.z * w1 + 1.0f / v2.position.z * w2;
 			float z = 1.0f / invZ;
 
 			int index = y * SCREEN_WIDTH + x;
 			if (z >= depthBuffer[index]) continue;
 
-			// Interpolate UVs (perspective correct)
-			float u = (v0.uv.x / v0.position.z) * w0 +
-				(v1.uv.x / v1.position.z) * w1 +
-				(v2.uv.x / v2.position.z) * w2;
+			// We store some precaculated values for the affine inside vertices (invW and uvDivW)
+			float invW = w0 * v0.invW + w1 * v1.invW + w2 * v2.invW;
 
-			float v = (v0.uv.y / v0.position.z) * w0 +
-				(v1.uv.y / v1.position.z) * w1 +
-				(v2.uv.y / v2.position.z) * w2;
+			float u = (w0 * v0.uvDivW.x + w1 * v1.uvDivW.x + w2 * v2.uvDivW.x) / invW;
+			float v = (w0 * v0.uvDivW.y + w1 * v1.uvDivW.y + w2 * v2.uvDivW.y) / invW;
 
-			u *= z;
-			v *= z;
+			u = std::clamp(u, 0.0f, 1.f);
+			v = std::clamp(v, 0.0f, 1.f);
 
-			u = std::clamp(u, 0.0f, 0.999f);
-			v = std::clamp(v, 0.0f, 0.999f);
+			// Here we store the texture the triangle has
+			Texture tex = mesh.textures[matIndex];
 
 			// Sample texture
-			int texX = int(u * teapot->texture->GetWidth());
-			int texY = int(v * teapot->texture->GetHeight());
-			int texIndex = (texY * teapot->texture->GetWidth() + texX) * teapot->texture->GetChannels();
+			int texX = int(u * tex.GetWidth());
+			int texY = int(v * tex.GetHeight());
+			
+			// Clamp coordinates to valid range
+			texX = std::clamp(texX, 0, tex.GetWidth() - 1);
+			texY = std::clamp(texY, 0, tex.GetHeight() - 1);
+			
+			// Diffuse
+			
+			uint8_t r = tex.GetTexel(texX, texY, 0); // Red channel
+			uint8_t g = tex.GetTexel(texX, texY, 1); // Green channel
+			uint8_t b = tex.GetTexel(texX, texY, 2); // Blue channel
+			
 
-			uint8_t r = teapot->texture->GetTexel(texIndex + 0);
-			uint8_t g = teapot->texture->GetTexel(texIndex + 1);
-			uint8_t b = teapot->texture->GetTexel(texIndex + 2);
+			// UV
+			/*
+			uint8_t r = uint8_t(u * 255.0f);
+			uint8_t g = uint8_t(v * 255.0f);
+			uint8_t b = 0; // You can also set b = 255 - g for gradient effect
+			*/
 
 			// Write to framebuffer
 			depthBuffer[index] = z;
@@ -237,8 +249,10 @@ void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2)
 	}
 }
 
-void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj)
+// TODO: arguments on this functions are not needed since I pass model pointer
+void Game::RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj)
 {
+	// TODO: chatgpt id this shit look into it
 	auto interpolate = [](const Vertex& a, const Vertex& b, float t) -> Vertex {
 		Vertex v;
 		v.position = a.position + (b.position - a.position) * t;
@@ -284,6 +298,7 @@ void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vect
 			clippedVerts.push_back(v1);
 			clippedVerts.push_back(v2);
 			Triangle t1;
+			t1.materialIndex = triangle.materialIndex;
 			t1.indices[0] = base + 0;
 			t1.indices[2] = base + 1;
 			t1.indices[1] = base + 2;
@@ -299,6 +314,7 @@ void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vect
 			clippedVerts.push_back(B);
 			clippedVerts.push_back(C);
 			Triangle t1;
+			t1.materialIndex = triangle.materialIndex;
 			t1.indices[0] = base + 0;
 			t1.indices[2] = base + 1;
 			t1.indices[1] = base + 2;
@@ -317,6 +333,8 @@ void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vect
 			clippedVerts.push_back(D);
 			Triangle t1;
 			Triangle t2;
+			t1.materialIndex = triangle.materialIndex;
+			t2.materialIndex = triangle.materialIndex;
 			t1.indices[0] = base + 0;
 			t1.indices[2] = base + 1;
 			t1.indices[1] = base + 2;
@@ -340,13 +358,20 @@ void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vect
 	{
 		float4 c = clippedVerts[i].pos4() * proj;
 		if (std::abs(c.w) < 1e-5f) continue;
+
 		float ndcX = c.x / c.w;
 		float ndcY = c.y / c.w;
 		float ndcZ = c.z / c.w;
+
 		float screenX = (ndcX + 1.0f) * 0.5f * SCREEN_WIDTH;
 		float screenY = (1.0f - (ndcY + 1.0f) * 0.5f) * SCREEN_HEIGHT;
-		float zDepth = (ndcZ + 1.0f) * 0.5f;
-		projected[i] = { {screenX, screenY, zDepth}, clippedVerts[i].uv };
+
+		Vertex v;
+		v.position = { screenX, screenY, ndcZ }; // keep ndcZ for depth buffer
+		v.invW = 1.0f / c.w;
+		v.uvDivW = clippedVerts[i].uv * v.invW;
+
+		projected[i] = v;
 	}
 
 	for (const auto& tri : culledTriangles)
@@ -354,7 +379,8 @@ void Game::RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vect
 		const Vertex& v0 = projected[tri.indices[0]];
 		const Vertex& v1 = projected[tri.indices[1]];
 		const Vertex& v2 = projected[tri.indices[2]];
-		PlotTriangle(v0, v1, v2);
+		int materialIndex = tri.materialIndex;
+		PlotTriangle(v0, v1, v2, targetModel->mesh, materialIndex);
 	}
 }
 
@@ -388,22 +414,24 @@ void Game::Render()
 	UpdateWindow();
 	
 	Clear(0x00000000);
-	float3 translation = float3{ 0.f, -4.5f, 16.f };
-	float3 scale = float3{ 1.f, 1.f, 1.f };
-	float3 rotation = float3{};
-	mat4 model = (mat::Translate(0.f, -4.5f, 16.f) + mat::Scale(1.f, 1.f, 1.f)) * mat::Rotate(0.1f, 1.f, 0.1f, rotationIncrement);
+
+	mat4 model2 = (mat::Translate(0.f, -11.f, 20.f) + mat::Scale(0.001f, 0.001f, 0.001f));
+	mat4 model = (mat::Translate(0.f, -10.f, 20.f) + mat::Scale(0.001f, 0.001f, 0.001f)) * mat::Rotate(0.0f, 1.f, 0.0f, rotationIncrement);
 	mat4 view = mat::LookAt(mainCam.eye, mainCam.eye + mainCam.target, mainCam.up);
 	mat4 proj = mat::Perspective(mainCam.fovRad, mainCam.aspect, 1.0f, 500.0f);
 
 	mat4 MV = view * model;
+	mat4 MV2 = view * model2;
 	mat4 MVP = proj * view * model;
 
-	// for now it's just one model so hardcoded
-	for (int i = 0; i < 4; i++)
+	for (int m = 0; m < models.size(); ++m)
 	{
-		for (int j = 0; j < 4; j++)
+		for (int i = 0; i < 4; i++)
 		{
-			blases[0].transform[i * 4 + j] = model.m[j][i];
+			for (int j = 0; j < 4; j++)
+			{
+				blases[m].transform[i * 4 + j] = model.m[j][i];
+			}
 		}
 	}
 
@@ -411,7 +439,13 @@ void Game::Render()
 
 	if (gameState.rasterized == true) 
 	{
-		RenderObject(0xFFFFFFFF, teapot->mesh.vertices, teapot->mesh.triangle, MV, proj);
+		for (int i = 0; i < models.size(); ++i)
+		{
+			if (i == 0)
+				RenderObject(models[i], 0xFFFFFFFF, models[i]->mesh.vertices, models[i]->mesh.triangle, MV, proj);
+			else
+				RenderObject(models[i], 0xFFFFFFFF, models[i]->mesh.vertices, models[i]->mesh.triangle, MV2, proj);
+		}
 	}
 	else if (gameState.raytraced == true)
 	{

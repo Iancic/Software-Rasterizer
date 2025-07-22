@@ -3,6 +3,7 @@
 #include "Program.hpp"
 #include "Ray.hpp"
 #include "Model.hpp"
+#include <algorithm>
 
 static uint32_t* framebuffer = nullptr;
 static BITMAPINFO bitmapInfo;
@@ -140,14 +141,14 @@ private:
 	void Plot(uint32_t color, int pX, int pY);
 	void Line(uint32_t color, float x1, float y1, float x2, float y2);
 	void TriangleWireframe(uint32_t color, float x1, float y1, float x2, float y2, float x3, float y3);
-	void PlotTriangle(const Vertex& v1, const Vertex& v2, const Vertex& v3);
+	void PlotTriangle(const Vertex& v1, const Vertex& v2, const Vertex& v3, const Mesh& mesh, const int matIndex);
 
 	std::vector<Triangle> CullBackFaces(std::vector<float3>& viewVertices, std::vector<Triangle>& triangles);
 	bool BackFacing(const Triangle& triangle, std::vector<float3>& viewVerts);
 	
 	void ClipTriangle();
 
-	void RenderObject(uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj);
+	void RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj);
 	
 	float3 Trace(tinybvh::Ray& ray, const mat4& modelMat);
 	void IntersectTri(Ray& ray, const Tri& tri);
@@ -204,15 +205,18 @@ private:
 		};
 	};
 
-	float rotationIncrement = 0.f;
+	float rotationIncrement = 0.f, scaleIncrement = 1.f;
 
 	Camera mainCam;
 
-	Model* teapot = nullptr;
+	Model* testCharacter = nullptr;
+	Model* testFloor = nullptr;
+
+	std::vector<Model*> models;
 
 	tinybvh::BVH tlas;
 
-	std::vector <tinybvh::BVHBase*> bvh = { };
+	std::vector<tinybvh::BVHBase*> bvh = { };
 
 	std::vector<tinybvh::BLASInstance> blases = { };
 };

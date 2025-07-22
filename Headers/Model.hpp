@@ -1,5 +1,4 @@
 #pragma once
-#include "Texture.hpp"
 #include "tinyBVH.hpp"
 #include <vector>
 #include "Math.hpp"
@@ -7,11 +6,10 @@
 class Model
 {
 public:
-	Model();
+	Model(const char* filePath);
 	~Model() = default;
 
 	Mesh mesh;
-	Texture* texture = nullptr;
 
 	std::vector<float4> fatTriangles; // Fat Triangles For Tinybvh
 

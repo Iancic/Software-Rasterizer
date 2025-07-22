@@ -1,9 +1,8 @@
 #include "Model.hpp"
 
-Model::Model()
+Model::Model(const char* filePath)
 {
-	texture = new Texture("Assets/container.jpg");
-	mesh = LoadMesh("Assets/Teapot/Teapot.obj");
+	mesh = LoadMeshTinyObj(filePath);
 
 	modelBVH = new tinybvh::BVH8_CPU();
 	modelBVH->BuildHQ(mesh.fatTriangles.data(), static_cast<uint32_t>((mesh.fatTriangles.size() / 3)));

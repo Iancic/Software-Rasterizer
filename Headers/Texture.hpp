@@ -1,22 +1,22 @@
 #pragma once
 #include "stb_image.h"
 #include <string>
+#include <cstdint>
 
 class Texture
 {
 public:
-	Texture() = default;
-	Texture(const std::string filePath);
-	~Texture() = default;
+    std::string name; // Material name (not filepath)
+    int width = 0, height = 0, nrChannels = 0;
+    uint8_t* buffer = nullptr;
 
-	const uint8_t GetTexel(int index);
+    Texture(const std::string& filePath, const std::string& materialName);
+    ~Texture();
 
-	const int GetWidth() { return width; }
-	const int GetHeight() { return height; }
-	const int GetChannels() { return nrChannels; };
-	const unsigned char* GetBuffer() { buffer; };
+    uint8_t GetTexel(int x, int y, int channel = 0) const;
 
-private:
-	int width, height, nrChannels;
-	unsigned char* buffer;
+    bool IsValid() const { return buffer != nullptr; }
+
+    int GetWidth() { return width; };
+    int GetHeight() { return height; };
 };
