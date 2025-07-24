@@ -2,6 +2,8 @@
 // #define DEBUGMODE
 // #define FULLSCREEN
 
+constexpr float EPSILON = 0.01f;
+
 constexpr bool UNCAPPED = true; 
 constexpr int FPS = 120;
 constexpr int MIL_PER_FRAME = 1000 / FPS; // 1 second = 1000 ms // How much do we expect each frame to last

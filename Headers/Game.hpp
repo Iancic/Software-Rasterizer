@@ -3,6 +3,7 @@
 #include "Program.hpp"
 #include "Ray.hpp"
 #include "Model.hpp"
+#include "PointLight.h"
 #include <algorithm>
 
 static uint32_t* framebuffer = nullptr;
@@ -150,7 +151,7 @@ private:
 
 	void RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj);
 	
-	float3 Trace(tinybvh::Ray& ray, const mat4& modelMat);
+	float3 Trace(tinybvh::Ray& ray);
 	void IntersectTri(Ray& ray, const Tri& tri);
 	Tri tri[TRI_N];
 
@@ -219,4 +220,7 @@ private:
 	std::vector<tinybvh::BVHBase*> bvh = { };
 
 	std::vector<tinybvh::BLASInstance> blases = { };
+
+	float theta = 0.f; // used to rotate point light around model
+	std::vector<PointLight*> lights = { };
 };

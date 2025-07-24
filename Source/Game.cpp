@@ -2,6 +2,8 @@
 
 void Game::Init()
 {
+	lights.push_back(new PointLight()); 
+
 	testCharacter = new Model("Assets/Snake/Source/Old_Snake.obj");
 	models.push_back(testCharacter);
 
@@ -52,6 +54,18 @@ void Game::Update()
 	else if (input.moveRight)
 		mainCam.eye.x += 3.f * deltaTime;
 	*/
+
+	// This makes the one point light we have move in a circle around the character model
+	float center = 0.f;
+	float r = 15.f;
+	// 0.f, -10.f, 20.f
+	//lights[0]->position.x = 10.f;
+	lights[0]->position.y = 10.f;
+	//lights[0]->position.z = 20.f;
+	
+	lights[0]->position.x = center + r * cos(theta);
+	lights[0]->position.z = -5 + r * sin(theta);
+	theta += 1.8f * deltaTime; // first value is speed
 
 	HandleInput();
 }
@@ -384,11 +398,25 @@ void Game::RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>&
 	}
 }
 
-float3 Game::Trace(tinybvh::Ray& ray, const mat4& modelMat)
+float3 Game::Trace(tinybvh::Ray& ray)
 {
 	tlas.IntersectTLAS(ray);
 
-	return (ray.hit.t >= BVH_FAR) ? float3{ 0.f, 255.f, 0.f } : float3{ 255.f, 0.f, 0.f };
+	if (ray.hit.t >= BVH_FAR) return float3{ 0.f, 255.f, 0.f };
+
+	tinybvh::bvhvec3 I = ray.IntersectionPoint();
+
+	for (auto light: lights)
+	{
+		tinybvh::bvhvec3 D = tinybvh::bvhvec3(light->position.x, light->position.y, light->position.z) - I;
+		float distance = std::sqrt(D.x * D.x + D.y * D.y + D.z * D.z);
+		
+		D = { D.x / distance, D.y / distance, D.z / distance };
+		tinybvh::Ray shadowRay(I + D * EPSILON, D, distance - EPSILON);
+
+		if (tlas.IsOccluded(shadowRay)) return float3{ 0.f, 0.f, 0.f };
+		else return float3{ 255.f, 0.f, 0.f };
+	}
 }
 
 void Game::IntersectTri(Ray& ray, const Tri& tri)
@@ -430,7 +458,10 @@ void Game::Render()
 		{
 			for (int j = 0; j < 4; j++)
 			{
-				blases[m].transform[i * 4 + j] = model.m[j][i];
+				if (m == 0 )
+					blases[0].transform[i * 4 + j] = model.m[j][i];
+				else if (m == 1)
+					blases[1].transform[i * 4 + j] = model2.m[j][i];
 			}
 		}
 	}
@@ -454,7 +485,7 @@ void Game::Render()
 			for (int x = 0; x < SCREEN_WIDTH; x++)
 			{
 				tinybvh::Ray tracedRay = mainCam.GetPrimaryRay(x, y);
-				float3 trace = Trace(tracedRay, model);
+				float3 trace = Trace(tracedRay);
 				uint32_t pixel = MakeColor(int(trace.x), int(trace.y), int(trace.z), 255);
 				Plot(pixel, x, y);
 			}
