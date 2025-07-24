@@ -154,6 +154,7 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Source\Model.cpp" />
+    <ClCompile Include="Source\PointLight.cpp" />
     <ClCompile Include="Source\Ray.cpp" />
     <ClCompile Include="Source\Camera.cpp" />
     <ClCompile Include="Source\Game.cpp" />
@@ -171,6 +172,7 @@
     <ClInclude Include="Headers\Logger.hpp" />
     <ClInclude Include="Headers\Math.hpp" />
     <ClInclude Include="Headers\Model.hpp" />
+    <ClInclude Include="Headers\PointLight.h" />
     <ClInclude Include="Headers\Program.hpp" />
     <ClInclude Include="Headers\stb_image.h" />
     <ClInclude Include="Headers\Texture.hpp" />
