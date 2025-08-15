@@ -24,7 +24,7 @@
     <ProjectGuid>{ef7284c2-5add-46f3-96c5-44a504909dfd}</ProjectGuid>
     <RootNamespace>Doom1993PathTraced</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>Doom-1993-Path-Traced</ProjectName>
+    <ProjectName>Software-Rasterizer</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

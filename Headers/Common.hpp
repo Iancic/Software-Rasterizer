@@ -2,7 +2,7 @@
 // #define DEBUGMODE
 // #define FULLSCREEN
 
-constexpr float EPSILON = 0.01f;
+constexpr float EPSILON = 1e-3;
 
 constexpr bool UNCAPPED = true; 
 constexpr int FPS = 120;

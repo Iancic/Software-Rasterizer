@@ -2,7 +2,7 @@
 
 int main(int argc, char* argv[])
 {
-    Program* game = new Game("Doom 1993 Path Traced");
+    Program* game = new Game("Renderer");
     game->Init();
 
     while (game->isRunning)

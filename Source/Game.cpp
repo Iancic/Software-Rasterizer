@@ -12,7 +12,7 @@ void Game::Init()
 
 	previousTime = std::chrono::high_resolution_clock::now();
 
-	std::wstring title = L"Hybrid Renderer";
+	std::wstring title = L"Renderer";
 	createWindow(SCREEN_WIDTH, SCREEN_HEIGHT, title.c_str());
 
 	// Init framebuffer and depth buffer
@@ -45,27 +45,15 @@ void Game::Update()
 	previousTime = currentTime;
 
 	/*
-	if (input.moveForward)
-		mainCam.eye.z += 3.f * deltaTime;
-	else if (input.moveBackward)
-		mainCam.eye.z -= 3.f * deltaTime;
-	if (input.moveLeft)
-		mainCam.eye.x -= 3.f * deltaTime;
-	else if (input.moveRight)
-		mainCam.eye.x += 3.f * deltaTime;
-	*/
+	float center = 0.f, r = 15.f, speed = 1.8f;
 
-	// This makes the one point light we have move in a circle around the character model
-	float center = 0.f;
-	float r = 15.f;
-	// 0.f, -10.f, 20.f
-	//lights[0]->position.x = 10.f;
 	lights[0]->position.y = 10.f;
-	//lights[0]->position.z = 20.f;
-	
 	lights[0]->position.x = center + r * cos(theta);
 	lights[0]->position.z = -5 + r * sin(theta);
-	theta += 1.8f * deltaTime; // first value is speed
+
+	theta += speed * deltaTime;
+	*/
+	lights[0]->position = float3(0.f, 10.f, -5.f);
 
 	HandleInput();
 }
@@ -398,6 +386,10 @@ void Game::RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>&
 	}
 }
 
+inline float dot(const tinybvh::bvhvec3& a, const tinybvh::bvhvec3& b) {
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
 float3 Game::Trace(tinybvh::Ray& ray)
 {
 	tlas.IntersectTLAS(ray);
@@ -406,13 +398,15 @@ float3 Game::Trace(tinybvh::Ray& ray)
 
 	tinybvh::bvhvec3 I = ray.IntersectionPoint();
 
-	for (auto light: lights)
+	//for (auto light: lights)
 	{
-		tinybvh::bvhvec3 D = tinybvh::bvhvec3(light->position.x, light->position.y, light->position.z) - I;
-		float distance = std::sqrt(D.x * D.x + D.y * D.y + D.z * D.z);
+		tinybvh::bvhvec3 L = tinybvh::bvhvec3(lights[0]->position.x, lights[0]->position.y, lights[0]->position.z) - I;
 		
-		D = { D.x / distance, D.y / distance, D.z / distance };
-		tinybvh::Ray shadowRay(I + D * EPSILON, D, distance - EPSILON);
+		float distance = std::sqrtf(L.x * L.x + L.y * L.y + L.z * L.z);
+
+		tinybvh::bvhvec3 dir = L * (1.0f / distance); // Normalize L
+
+		tinybvh::Ray shadowRay(I + dir * EPSILON, dir, distance - EPSILON);
 
 		if (tlas.IsOccluded(shadowRay)) return float3{ 0.f, 0.f, 0.f };
 		else return float3{ 255.f, 0.f, 0.f };
@@ -442,6 +436,8 @@ void Game::Render()
 	UpdateWindow();
 	
 	Clear(0x00000000);
+
+	mainCam.BuildViewPlane();
 
 	mat4 model2 = (mat::Translate(0.f, -11.f, 20.f) + mat::Scale(0.001f, 0.001f, 0.001f));
 	mat4 model = (mat::Translate(0.f, -10.f, 20.f) + mat::Scale(0.001f, 0.001f, 0.001f)) * mat::Rotate(0.0f, 1.f, 0.0f, rotationIncrement);
@@ -492,7 +488,7 @@ void Game::Render()
 		}
 	}
 
-	mainCam.BuildViewPlane();
+	//mainCam.BuildViewPlane();
 
 	InvalidateRect(window, nullptr, FALSE);
 }
