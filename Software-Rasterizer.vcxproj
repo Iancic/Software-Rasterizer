@@ -136,7 +136,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)Headers\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Headers\;$(ProjectDir)Headers\tinygltf;$(ProjectDir)Headers\stb_image;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -152,20 +152,20 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Source\glTF_Mesh.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Source\Model.cpp" />
     <ClCompile Include="Source\PointLight.cpp" />
-    <ClCompile Include="Source\Ray.cpp" />
     <ClCompile Include="Source\Camera.cpp" />
     <ClCompile Include="Source\Game.cpp" />
     <ClCompile Include="Source\Logger.cpp" />
     <ClCompile Include="Source\Program.cpp" />
-    <ClCompile Include="Source\stb_image.cpp" />
     <ClCompile Include="Source\Texture.cpp" />
-    <ClCompile Include="Source\tinyBVH.cpp" />
     <ClCompile Include="Source\tiny_obj_loader.cpp" />
+    <ClCompile Include="Source\tiny_gltf.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Headers\glTF_Mesh.hpp" />
     <ClInclude Include="Headers\Camera.hpp" />
     <ClInclude Include="Headers\Common.hpp" />
     <ClInclude Include="Headers\Game.hpp" />
@@ -174,13 +174,13 @@
     <ClInclude Include="Headers\Model.hpp" />
     <ClInclude Include="Headers\PointLight.h" />
     <ClInclude Include="Headers\Program.hpp" />
-    <ClInclude Include="Headers\stb_image.h" />
+    <ClInclude Include="Headers\stb_image\stb_image.h" />
     <ClInclude Include="Headers\Texture.hpp" />
-    <ClInclude Include="Headers\tinyBVH.hpp" />
-    <ClInclude Include="Headers\tiny_bvh.h" />
+    <ClInclude Include="Headers\tinygltf\json.hpp" />
+    <ClInclude Include="Headers\stb_image\stb_image_write.h" />
+    <ClInclude Include="Headers\tinygltf\tiny_gltf.h" />
     <ClInclude Include="Headers\tiny_obj_loader.h" />
     <ClInclude Include="Header\Program.hpp" />
-    <ClInclude Include="Headers\Ray.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />

@@ -1,5 +1,4 @@
 #pragma once
-#include "tinyBVH.hpp"
 #include <vector>
 #include "Math.hpp"
 
@@ -12,9 +11,6 @@ public:
 	Mesh mesh;
 
 	std::vector<float4> fatTriangles; // Fat Triangles For Tinybvh
-
-	// BVH
-	tinybvh::BVH8_CPU* modelBVH;
 
 private:
 };

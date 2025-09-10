@@ -2,13 +2,10 @@
 
 void Game::Init()
 {
-	lights.push_back(new PointLight()); 
+	testBunny = new glTF_Mesh("Assets/Bunny/scene.gltf");
 
 	testCharacter = new Model("Assets/Snake/Source/Old_Snake.obj");
 	models.push_back(testCharacter);
-
-	testFloor = new Model("Assets/Floor/Floor.obj");
-	models.push_back(testFloor);
 
 	previousTime = std::chrono::high_resolution_clock::now();
 
@@ -25,35 +22,16 @@ void Game::Init()
 	bitmapInfo.bmiHeader.biPlanes = 1;
 	bitmapInfo.bmiHeader.biBitCount = 32;
 	bitmapInfo.bmiHeader.biCompression = BI_RGB;
-
-	for (int i = 0; i < models.size(); ++i)
-	{
-		blases.push_back(tinybvh::BLASInstance(i));
-		bvh.push_back(models[i]->modelBVH);
-	}
-
-	tlas.Build(blases.data(), static_cast<uint32_t>(blases.size()), bvh.data(), static_cast<uint32_t>(bvh.size()));
 }
 
 void Game::Update()
 {
-	rotationIncrement += 0.01f;
+	rotationIncrement += 0.1f;
 
 	auto currentTime = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<float> elapsed = currentTime - previousTime;
 	float deltaTime = elapsed.count(); // deltaTime in seconds
 	previousTime = currentTime;
-
-	/*
-	float center = 0.f, r = 15.f, speed = 1.8f;
-
-	lights[0]->position.y = 10.f;
-	lights[0]->position.x = center + r * cos(theta);
-	lights[0]->position.z = -5 + r * sin(theta);
-
-	theta += speed * deltaTime;
-	*/
-	lights[0]->position = float3(0.f, 10.f, -5.f);
 
 	HandleInput();
 }
@@ -174,6 +152,8 @@ bool Game::BackFacing(const Triangle& triangle, std::vector<float3>& viewVerts)
 	return Dot(normal, toCamera) < 0.f;
 }
 
+
+
 void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, const Mesh& mesh, const int matIndex)
 {
 	// Bounding box
@@ -251,11 +231,179 @@ void Game::PlotTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, co
 	}
 }
 
-// TODO: arguments on this functions are not needed since I pass model pointer
-void Game::RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj)
+void Game::RenderGLTF(std::vector<glTF_Mesh::Vertex*> vertices, std::vector<glTF_Mesh::Triangle*> triangles, const mat4& MV, const mat4& proj)
 {
-	// TODO: chatgpt id this shit look into it
-	auto interpolate = [](const Vertex& a, const Vertex& b, float t) -> Vertex {
+	// Convert glTF vertices to your rendering vertex format
+	std::vector<Vertex> renderVertices;
+	std::vector<Triangle> renderTriangles;
+
+	// Convert glTF vertices to your Vertex format
+	renderVertices.reserve(vertices.size());
+	for (const auto* gltfVertex : vertices)
+	{
+		Vertex v;
+		// Convert glm::vec3 to your float3 format
+		v.position = { gltfVertex->m_position.x, gltfVertex->m_position.y, gltfVertex->m_position.z };
+		v.uv = { gltfVertex->m_texcoord_0.x, gltfVertex->m_texcoord_0.y };
+		// You can add normal, color, etc. if needed
+		renderVertices.push_back(v);
+	}
+
+	// Convert glTF triangles to your Triangle format
+	renderTriangles.reserve(triangles.size());
+	for (const auto* gltfTriangle : triangles)
+	{
+		Triangle tri;
+		tri.indices[0] = gltfTriangle->m_indices[0];
+		tri.indices[1] = gltfTriangle->m_indices[1];
+		tri.indices[2] = gltfTriangle->m_indices[2];
+		tri.materialIndex = 0; // You might want to handle materials differently
+		renderTriangles.push_back(tri);
+	}
+
+	// Now use the same rendering pipeline as OBJ
+	auto interpolate = [](const Vertex& a, const Vertex& b, float t) -> Vertex
+		{
+			Vertex v;
+			v.position = a.position + (b.position - a.position) * t;
+			v.uv = a.uv + (b.uv - a.uv) * t;
+			return v;
+		};
+
+	std::vector<Vertex> viewVerts;
+	std::vector<Triangle> clippedTris;
+	std::vector<Vertex> clippedVerts;
+
+	viewVerts.reserve(renderVertices.size());
+	for (const auto& v : renderVertices)
+	{
+		float4 viewPos = v.pos4() * MV;
+		Vertex out = v;
+		out.position = { viewPos.x, viewPos.y, viewPos.z };
+		viewVerts.push_back(out);
+	}
+
+	for (auto& triangle : renderTriangles)
+	{
+		const Vertex& v0 = viewVerts[triangle.indices[0]];
+		const Vertex& v1 = viewVerts[triangle.indices[1]];
+		const Vertex& v2 = viewVerts[triangle.indices[2]];
+
+		float z0 = v0.position.z;
+		float z1 = v1.position.z;
+		float z2 = v2.position.z;
+
+		std::vector<std::pair<Vertex, float>> inside;
+		std::vector<std::pair<Vertex, float>> outside;
+
+		if (z0 >= mainCam.zNear) inside.push_back({ v0, z0 }); else outside.push_back({ v0, z0 });
+		if (z1 >= mainCam.zNear) inside.push_back({ v1, z1 }); else outside.push_back({ v1, z1 });
+		if (z2 >= mainCam.zNear) inside.push_back({ v2, z2 }); else outside.push_back({ v2, z2 });
+
+		if (inside.empty()) continue;
+
+		if (outside.empty())
+		{
+			size_t base = clippedVerts.size();
+			clippedVerts.push_back(v0);
+			clippedVerts.push_back(v1);
+			clippedVerts.push_back(v2);
+			Triangle t1;
+			t1.materialIndex = triangle.materialIndex;
+			t1.indices[0] = base + 0;
+			t1.indices[2] = base + 1;
+			t1.indices[1] = base + 2;
+			clippedTris.push_back(t1);
+		}
+		else if (inside.size() == 1)
+		{
+			Vertex A = inside[0].first;
+			Vertex B = interpolate(A, outside[0].first, (mainCam.zNear - inside[0].second) / (outside[0].second - inside[0].second));
+			Vertex C = interpolate(A, outside[1].first, (mainCam.zNear - inside[0].second) / (outside[1].second - inside[0].second));
+			size_t base = clippedVerts.size();
+			clippedVerts.push_back(A);
+			clippedVerts.push_back(B);
+			clippedVerts.push_back(C);
+			Triangle t1;
+			t1.materialIndex = triangle.materialIndex;
+			t1.indices[0] = base + 0;
+			t1.indices[2] = base + 1;
+			t1.indices[1] = base + 2;
+			clippedTris.push_back(t1);
+		}
+		else if (inside.size() == 2)
+		{
+			Vertex A = inside[0].first;
+			Vertex B = inside[1].first;
+			Vertex C = interpolate(A, outside[0].first, (mainCam.zNear - inside[0].second) / (outside[0].second - inside[0].second));
+			Vertex D = interpolate(B, outside[0].first, (mainCam.zNear - inside[1].second) / (outside[0].second - inside[1].second));
+			size_t base = clippedVerts.size();
+			clippedVerts.push_back(A);
+			clippedVerts.push_back(B);
+			clippedVerts.push_back(C);
+			clippedVerts.push_back(D);
+			Triangle t1;
+			Triangle t2;
+			t1.materialIndex = triangle.materialIndex;
+			t2.materialIndex = triangle.materialIndex;
+			t1.indices[0] = base + 0;
+			t1.indices[2] = base + 1;
+			t1.indices[1] = base + 2;
+			clippedTris.push_back(t1);
+			t2.indices[0] = base + 0;
+			t2.indices[2] = base + 3;
+			t2.indices[1] = base + 2;
+			clippedTris.push_back(t2);
+		}
+	}
+
+	std::vector<float3> viewPositions;
+	viewPositions.reserve(clippedVerts.size());
+	for (const auto& v : clippedVerts)
+		viewPositions.push_back(v.position);
+
+	auto culledTriangles = CullBackFaces(viewPositions, clippedTris);
+
+	std::vector<Vertex> projected(clippedVerts.size());
+	for (size_t i = 0; i < clippedVerts.size(); ++i)
+	{
+		float4 c = clippedVerts[i].pos4() * proj;
+		if (std::abs(c.w) < 1e-5f) continue;
+
+		float ndcX = c.x / c.w;
+		float ndcY = c.y / c.w;
+		float ndcZ = c.z / c.w;
+
+		float screenX = (ndcX + 1.0f) * 0.5f * SCREEN_WIDTH;
+		float screenY = (1.0f - (ndcY + 1.0f) * 0.5f) * SCREEN_HEIGHT;
+
+		Vertex v;
+		v.position = { screenX, screenY, ndcZ }; // keep ndcZ for depth buffer
+		v.invW = 1.0f / c.w;
+		v.uvDivW = clippedVerts[i].uv * v.invW;
+
+		projected[i] = v;
+	}
+
+	for (const auto& tri : culledTriangles)
+	{
+		const Vertex& v0 = projected[tri.indices[0]];
+		const Vertex& v1 = projected[tri.indices[1]];
+		const Vertex& v2 = projected[tri.indices[2]];
+		int materialIndex = tri.materialIndex;
+
+		// For glTF, I want to handle materials differently
+		// For now I just pass the snake obj mesh and it will take it's texture
+		PlotTriangle(v0, v1, v2, models[0]->mesh, materialIndex);
+	}
+}
+
+// TODO: arguments on this functions are not needed since I pass model pointer
+void Game::RenderOBJ(Model* targetModel, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj)
+{
+	// ChatGPT generated
+	auto interpolate = [](const Vertex& a, const Vertex& b, float t) -> Vertex 
+		{
 		Vertex v;
 		v.position = a.position + (b.position - a.position) * t;
 		v.uv = a.uv + (b.uv - a.uv) * t;
@@ -263,6 +411,9 @@ void Game::RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>&
 		};
 
 	std::vector<Vertex> viewVerts;
+	std::vector<Triangle> clippedTris;
+	std::vector<Vertex> clippedVerts;
+
 	viewVerts.reserve(vertices.size());
 	for (const auto& v : vertices)
 	{
@@ -272,8 +423,6 @@ void Game::RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>&
 		viewVerts.push_back(out);
 	}
 
-	std::vector<Triangle> clippedTris;
-	std::vector<Vertex> clippedVerts;
 	for (auto& triangle : triangles)
 	{
 		const Vertex& v0 = viewVerts[triangle.indices[0]];
@@ -386,109 +535,24 @@ void Game::RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>&
 	}
 }
 
-inline float dot(const tinybvh::bvhvec3& a, const tinybvh::bvhvec3& b) {
-	return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-float3 Game::Trace(tinybvh::Ray& ray)
-{
-	tlas.IntersectTLAS(ray);
-
-	if (ray.hit.t >= BVH_FAR) return float3{ 0.f, 255.f, 0.f };
-
-	tinybvh::bvhvec3 I = ray.IntersectionPoint();
-
-	//for (auto light: lights)
-	{
-		tinybvh::bvhvec3 L = tinybvh::bvhvec3(lights[0]->position.x, lights[0]->position.y, lights[0]->position.z) - I;
-		
-		float distance = std::sqrtf(L.x * L.x + L.y * L.y + L.z * L.z);
-
-		tinybvh::bvhvec3 dir = L * (1.0f / distance); // Normalize L
-
-		tinybvh::Ray shadowRay(I + dir * EPSILON, dir, distance - EPSILON);
-
-		if (tlas.IsOccluded(shadowRay)) return float3{ 0.f, 0.f, 0.f };
-		else return float3{ 255.f, 0.f, 0.f };
-	}
-}
-
-void Game::IntersectTri(Ray& ray, const Tri& tri)
-{
-	const float3 edge1 = tri.vertex1 - tri.vertex0;
-	const float3 edge2 = tri.vertex2 - tri.vertex0;
-	const float3 h = Cross(ray.D, edge2);
-	const float a = Dot(edge1, h);
-	if (a > -0.0001f && a < 0.0001f) return; // ray parallel to triangle
-	const float f = 1 / a;
-	const float3 s = ray.O - tri.vertex0;
-	const float u = f * Dot(s, h);
-	if (u < 0 || u > 1) return;
-	const float3 q = Cross(s, edge1);
-	const float v = f * Dot(ray.D, q);
-	if (v < 0 || u + v > 1) return;
-	const float t = f * Dot(edge2, q);
-	if (t > 0.0001f) ray.T = std::min(ray.T, t);
-}
-
 void Game::Render()
 {
 	UpdateWindow();
 	
 	Clear(0x00000000);
 
-	mainCam.BuildViewPlane();
-
-	mat4 model2 = (mat::Translate(0.f, -11.f, 20.f) + mat::Scale(0.001f, 0.001f, 0.001f));
-	mat4 model = (mat::Translate(0.f, -10.f, 20.f) + mat::Scale(0.001f, 0.001f, 0.001f)) * mat::Rotate(0.0f, 1.f, 0.0f, rotationIncrement);
+	mat4 model = (mat::Translate(0.f, -4.5f, 3.5f) + mat::Scale(40, 40, 40)) * mat::Rotate(0.0f, 1.f, 0.0f, rotationIncrement);
 	mat4 view = mat::LookAt(mainCam.eye, mainCam.eye + mainCam.target, mainCam.up);
 	mat4 proj = mat::Perspective(mainCam.fovRad, mainCam.aspect, 1.0f, 500.0f);
 
 	mat4 MV = view * model;
-	mat4 MV2 = view * model2;
 	mat4 MVP = proj * view * model;
 
-	for (int m = 0; m < models.size(); ++m)
-	{
-		for (int i = 0; i < 4; i++)
-		{
-			for (int j = 0; j < 4; j++)
-			{
-				if (m == 0 )
-					blases[0].transform[i * 4 + j] = model.m[j][i];
-				else if (m == 1)
-					blases[1].transform[i * 4 + j] = model2.m[j][i];
-			}
-		}
-	}
+	// SNAKE: .obj file 
+	//RenderObject(models[0], models[0]->mesh.vertices, models[0]->mesh.triangle, MV, proj);
 
-	tlas.Build(blases.data(), static_cast<uint32_t>(blases.size()), bvh.data(), static_cast<uint32_t>(bvh.size()));
-
-	if (gameState.rasterized == true) 
-	{
-		for (int i = 0; i < models.size(); ++i)
-		{
-			if (i == 0)
-				RenderObject(models[i], 0xFFFFFFFF, models[i]->mesh.vertices, models[i]->mesh.triangle, MV, proj);
-			else
-				RenderObject(models[i], 0xFFFFFFFF, models[i]->mesh.vertices, models[i]->mesh.triangle, MV2, proj);
-		}
-	}
-	else if (gameState.raytraced == true)
-	{
-		for (int y = 0; y < SCREEN_HEIGHT; y++)
-		{
-			for (int x = 0; x < SCREEN_WIDTH; x++)
-			{
-				tinybvh::Ray tracedRay = mainCam.GetPrimaryRay(x, y);
-				float3 trace = Trace(tracedRay);
-				uint32_t pixel = MakeColor(int(trace.x), int(trace.y), int(trace.z), 255);
-				Plot(pixel, x, y);
-			}
-		}
-	}
-
-	//mainCam.BuildViewPlane();
+	// BUNNY: .gltf file
+	RenderGLTF(testBunny->m_vertices, testBunny->m_triangles, MV, proj);
 
 	InvalidateRect(window, nullptr, FALSE);
 }

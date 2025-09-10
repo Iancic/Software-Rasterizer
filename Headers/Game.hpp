@@ -1,22 +1,12 @@
 #pragma once
 #include "Math.hpp"
 #include "Program.hpp"
-#include "Ray.hpp"
 #include "Model.hpp"
-#include "PointLight.h"
+#include "glTF_Mesh.hpp"
 #include <algorithm>
 
 static uint32_t* framebuffer = nullptr;
 static BITMAPINFO bitmapInfo;
-
-struct RenderState
-{
-	bool raytraced = false;
-	bool rasterized = true;
-	bool hyrbid = false;
-};
-
-static RenderState gameState;
 
 struct InputState 
 {
@@ -52,20 +42,6 @@ static inline LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 	case WM_KEYDOWN:
 		switch (wParam)
 		{
-		case 'T':
-		{
-			if (gameState.rasterized == true)
-			{
-				gameState.rasterized = false;
-				gameState.raytraced = true;
-			}
-			else if (gameState.raytraced == true)
-			{
-				gameState.rasterized = true;
-				gameState.raytraced = false;
-			}
-			break;
-		}
 		case 'W': case VK_UP:
 			input.moveForward = true;
 			break;
@@ -146,14 +122,9 @@ private:
 
 	std::vector<Triangle> CullBackFaces(std::vector<float3>& viewVertices, std::vector<Triangle>& triangles);
 	bool BackFacing(const Triangle& triangle, std::vector<float3>& viewVerts);
-	
-	void ClipTriangle();
 
-	void RenderObject(Model* targetModel, uint32_t color, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj);
-	
-	float3 Trace(tinybvh::Ray& ray);
-	void IntersectTri(Ray& ray, const Tri& tri);
-	Tri tri[TRI_N];
+	void RenderOBJ(Model* targetModel, std::vector<Vertex>& vertices, std::vector<Triangle>& triangles, const mat4& MV, const mat4& proj);
+	void RenderGLTF(std::vector<glTF_Mesh::Vertex*> vertices, std::vector<glTF_Mesh::Triangle*> triangles, const mat4& MV, const mat4& proj);
 
 	class Camera
 	{
@@ -171,56 +142,14 @@ private:
 
 		float aspect = float(SCREEN_WIDTH) / float(SCREEN_HEIGHT);
 		float fovRad = 60 * (3.14159f / 180.0f);
-
-		tinybvh::Ray GetPrimaryRay(const float pX, const float pY)
-		{
-			float u = static_cast<float>(pX) / static_cast<float>(SCREEN_WIDTH);
-			float v = static_cast<float>(pY) / static_cast<float>(SCREEN_HEIGHT);
-
-			// Interpolate across the screen plane
-			float3 screenPoint = topLeft + (topRight - topLeft) * u + (bottomLeft - topLeft) * v;
-			float3 dir = normalize(screenPoint - eye);
-			return tinybvh::Ray(tinybvh::bvhvec3(eye.x, eye.y, eye.z), tinybvh::bvhvec3(dir.x, dir.y, dir.z));
-		};
-
-		void BuildViewPlane(float fovY = 60.0f, float focalLength = 1.0f)
-		{
-			float aspect = static_cast<float>(SCREEN_WIDTH) / static_cast<float>(SCREEN_HEIGHT);
-
-			// Basis vectors
-			forward = normalize(target - eye);
-			float3 right = normalize(Cross(up, forward));
-			float3 upVec = normalize(Cross(forward, right));
-
-			// Convert FOV to view plane height
-			float halfHeight = tanf(fovY * 0.5f * 3.14159f / 180.0f);
-			float halfWidth = halfHeight * aspect;
-
-			// View plane center
-			float3 center = eye + forward * focalLength;
-
-			// Corner positions in world space
-			topLeft = center + upVec * halfHeight - right * halfWidth;
-			topRight = center + upVec * halfHeight + right * halfWidth;
-			bottomLeft = center - upVec * halfHeight - right * halfWidth;
-		};
 	};
 
 	float rotationIncrement = 0.f, scaleIncrement = 1.f;
 
 	Camera mainCam;
-
+	glTF_Mesh *testBunny = nullptr;
 	Model* testCharacter = nullptr;
 	Model* testFloor = nullptr;
 
 	std::vector<Model*> models;
-
-	tinybvh::BVH tlas;
-
-	std::vector<tinybvh::BVHBase*> bvh = { };
-
-	std::vector<tinybvh::BLASInstance> blases = { };
-
-	float theta = 0.f; // used to rotate point light around model
-	std::vector<PointLight*> lights = { };
 };

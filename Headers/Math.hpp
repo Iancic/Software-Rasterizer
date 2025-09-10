@@ -9,9 +9,15 @@
 #include <deque>
 #include <cassert>
 #include <unordered_map>
-#include "Texture.hpp"
 #include <filesystem>
-#include "tinyBVH.hpp"
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtx/quaternion.hpp>
+
+#include "Texture.hpp"
 #include "tiny_obj_loader.h"
 #include "Common.hpp"
 
@@ -207,8 +213,9 @@ inline mat4 operator*(const mat4& A, const mat4& B)
 struct Vertex
 {
 	float3 position;
-	float2 uv;
 	float3 normal;
+	float2 uv;
+	
 	float4 pos4() const { return { position.x, position.y, position.z, 1.f }; };
 
 	bool operator==(const Vertex& other) const 
@@ -224,9 +231,9 @@ struct Vertex
 
 struct Triangle
 {
-	uint32_t color;
 	int indices[3];
 
+	uint32_t color;
 	int materialIndex = -1; // default to invalid
 };
 
@@ -254,13 +261,12 @@ class Mesh
 {
 public:
 	Mesh() = default;
-	Mesh(std::vector<Triangle> trianglesArg, std::vector<tinybvh::bvhvec4> fatTris, std::vector<Vertex> vertArg, std::vector<float2>texArg, std::vector<float3>normalArg, std::deque<FaceGroup> facesArg)
-		: fatTriangles(fatTris), triangle(trianglesArg), vertices(vertArg), texCoords(texArg), normals(normalArg), face_groups(facesArg) { };
+	Mesh(std::vector<Triangle> trianglesArg, std::vector<Vertex> vertArg, std::vector<float2>texArg, std::vector<float3>normalArg, std::deque<FaceGroup> facesArg)
+		: triangle(trianglesArg), vertices(vertArg), texCoords(texArg), normals(normalArg), face_groups(facesArg) { };
 	std::vector<Vertex> vertices;
 	std::vector<float2> texCoords;
 	std::vector<float3> normals;
 	std::vector<Triangle> triangle;
-	std::vector<tinybvh::bvhvec4> fatTriangles;
 	std::deque<FaceGroup> face_groups;
 
 	std::vector<Texture>textures;
@@ -304,7 +310,6 @@ static Mesh LoadMeshTinyObj(const char* filePath)
 	std::unordered_map<std::string, int> uniqueVertexMap;
 	std::vector<Vertex> finalVertices;
 	std::vector<Triangle> finalTriangles;
-	std::vector<tinybvh::bvhvec4> fatTris;
 
 	for (const auto& shape : shapes) {
 		size_t index_offset = 0;
@@ -347,7 +352,6 @@ static Mesh LoadMeshTinyObj(const char* filePath)
 				// Reuse vertex if already exists (optional)
 				int finalIndex = static_cast<int>(finalVertices.size());
 				finalVertices.push_back(vert);
-				fatTris.push_back(tinybvh::bvhvec4{ vert.position.x, vert.position.y, vert.position.z, 0.f });
 
 				tri.indices[v] = finalIndex;
 			}
@@ -359,7 +363,6 @@ static Mesh LoadMeshTinyObj(const char* filePath)
 
 	mesh.triangle = finalTriangles;
 	mesh.vertices = finalVertices;
-	mesh.fatTriangles = fatTris;
 
 	return mesh;
 }
@@ -448,7 +451,6 @@ static inline Mesh LoadMesh(const char* filePath)
 	std::vector<float3> normals;
 	std::deque<FaceGroup> face_groups;
 	std::vector<Triangle> triangles;
-	std::vector<tinybvh::bvhvec4> fatTris;
 
 	face_groups.emplace_back();
 	FaceGroup* cur_face_group = &face_groups.back();
@@ -580,7 +582,6 @@ static inline Mesh LoadMesh(const char* filePath)
 				v.normal = normals[fv.normalIndex];
 
 				int index = static_cast<int>(finalVertices.size());
-				fatTris.push_back(tinybvh::bvhvec4{ v.position.x, v.position.y, v.position.z, 0.f });
 
 				finalVertices.push_back(v);
 				t.indices[j] = index;
@@ -591,7 +592,6 @@ static inline Mesh LoadMesh(const char* filePath)
 	}
 
 	mesh.triangle = finalTriangles;
-	mesh.fatTriangles = fatTris;
 	mesh.vertices = finalVertices;
 	mesh.texCoords = texCoords;
 	mesh.normals = normals;
